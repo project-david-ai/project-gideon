@@ -90,6 +90,33 @@ def canonical_job_fingerprint(
     ).hexdigest()
 
 
+
+_NON_AUTHORITATIVE_REQUISITION_IDS = frozenset(
+    {
+        "see opening id",
+    }
+)
+
+
+def _normalise_requisition_id(
+    value: str | None,
+) -> str | None:
+    normalised = _normalise_text(
+        value
+    )
+
+    if not normalised:
+        return None
+
+    if (
+        normalised
+        in _NON_AUTHORITATIVE_REQUISITION_IDS
+    ):
+        return None
+
+    return normalised
+
+
 def build_job_identity(
     candidate: JobIngestionCandidate,
 ) -> JobIdentity:
@@ -106,11 +133,8 @@ def build_job_identity(
             )
             or None
         ),
-        requisition_id=(
-            _normalise_text(
-                candidate.requisition_id
-            )
-            or None
+        requisition_id=_normalise_requisition_id(
+            candidate.requisition_id
         ),
         canonical_fingerprint=canonical_job_fingerprint(
             job

@@ -41,7 +41,7 @@ class InMemoryJobIngestionRepository:
 
         self._fingerprint_identity: dict[
             tuple[str, str],
-            str,
+            str | None,
         ] = {}
 
     async def upsert_job(
@@ -106,23 +106,60 @@ class InMemoryJobIngestionRepository:
             identity.canonical_fingerprint,
         )
 
+        fingerprint_known = (
+            fingerprint_key
+            in self._fingerprint_identity
+        )
+
         existing_id = self._fingerprint_identity.get(
             fingerprint_key
         )
 
-        if existing_id:
-            return JobUpsertResult(
-                job=deepcopy(
-                    self._jobs[
-                        (
-                            tenant_id,
-                            existing_id,
-                        )
-                    ]
-                ),
-                match_type=JobMatchType.CANONICAL_STRONG_MATCH,
-                created=False,
+        fingerprint_is_ambiguous = (
+            fingerprint_known
+            and existing_id is None
+        )
+
+        same_source_distinct_native_ids = False
+
+        if existing_id is not None:
+            existing_job = self._jobs[
+                (
+                    tenant_id,
+                    existing_id,
+                )
+            ]
+
+            existing_source = (
+                existing_job.source.strip().lower()
             )
+
+            existing_source_job_id = (
+                (
+                    existing_job.source_job_id
+                    or ""
+                )
+                .strip()
+                .lower()
+            )
+
+            same_source_distinct_native_ids = bool(
+                identity.source_job_id
+                and existing_source_job_id
+                and existing_source
+                == identity.source
+                and existing_source_job_id
+                != identity.source_job_id
+            )
+
+            if not same_source_distinct_native_ids:
+                return JobUpsertResult(
+                    job=deepcopy(
+                        existing_job
+                    ),
+                    match_type=JobMatchType.CANONICAL_STRONG_MATCH,
+                    created=False,
+                )
 
         stored = deepcopy(
             candidate
@@ -152,9 +189,17 @@ class InMemoryJobIngestionRepository:
                 )
             ] = stored.id
 
-        self._fingerprint_identity[
-            fingerprint_key
-        ] = stored.id
+        if (
+            fingerprint_is_ambiguous
+            or same_source_distinct_native_ids
+        ):
+            self._fingerprint_identity[
+                fingerprint_key
+            ] = None
+        else:
+            self._fingerprint_identity[
+                fingerprint_key
+            ] = stored.id
 
         return JobUpsertResult(
             job=deepcopy(
