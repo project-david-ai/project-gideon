@@ -49,6 +49,24 @@ class JobsDelegationService:
     ) -> None:
         self._port = port
 
+    def bind_presentation(
+        self,
+        *,
+        presentation_sink,
+    ) -> None:
+        bind = getattr(
+            self._port,
+            "bind_presentation",
+            None,
+        )
+
+        if callable(
+            bind
+        ):
+            bind(
+                presentation_sink=presentation_sink
+            )
+
     def delegate(
         self,
         request: JobsDelegationRequest,

@@ -1,8 +1,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timezone
 
+from project_gideon.models.presentation import (
+    GideonPresentationEvent,
+    PresentationEventType,
+    PresentationState,
+)
 from project_gideon.models.delegation import (
     DelegationStatus,
     JobsDelegationAction,
@@ -37,6 +43,62 @@ class GideonJobsDelegationPort:
     ) -> None:
         self._acquisition = acquisition
         self._ingestion = ingestion
+        self._presentation_sink: (
+            Callable[
+                [GideonPresentationEvent],
+                None,
+            ]
+            | None
+        ) = None
+
+    def bind_presentation(
+        self,
+        *,
+        presentation_sink: Callable[
+            [GideonPresentationEvent],
+            None,
+        ]
+        | None,
+    ) -> None:
+        self._presentation_sink = presentation_sink
+
+        bind = getattr(
+            self._acquisition,
+            "bind_presentation",
+            None,
+        )
+
+        if callable(
+            bind
+        ):
+            bind(
+                presentation_sink=presentation_sink
+            )
+
+    def _present(
+        self,
+        *,
+        title: str,
+        state: PresentationState = PresentationState.IN_PROGRESS,
+        detail: str | None = None,
+        meta_data: dict[str, object] | None = None,
+    ) -> None:
+        if self._presentation_sink is None:
+            return
+
+        self._presentation_sink(
+            GideonPresentationEvent(
+                type=PresentationEventType.ACTIVITY,
+                state=state,
+                phase="jobs",
+                faction="jobs",
+                title=title,
+                detail=detail,
+                meta_data=dict(
+                    meta_data or {}
+                ),
+            )
+        )
 
     def _acquire(
         self,
@@ -70,8 +132,37 @@ class GideonJobsDelegationPort:
         )
 
         try:
+            self._present(
+                title="Searching current opportunities",
+                detail=(
+                    "The jobs faction is checking "
+                    "verified employer sources."
+                ),
+            )
+
             candidates = self._acquire(
                 request
+            )
+
+            self._present(
+                title=(
+                    f"Preparing {len(candidates)} "
+                    "opportunity"
+                    + (
+                        ""
+                        if len(candidates) == 1
+                        else "ies"
+                    )
+                    if len(candidates) == 1
+                    else (
+                        f"Preparing {len(candidates)} "
+                        "opportunities"
+                    )
+                ),
+                detail=(
+                    "Reconciling discovered roles "
+                    "with canonical job records."
+                ),
             )
 
             job_ids: list[str] = []
@@ -102,6 +193,36 @@ class GideonJobsDelegationPort:
                 else:
                     duplicate_count += 1
 
+            self._present(
+                title=(
+                    f"{ingested_count} new "
+                    "opportunit"
+                    + (
+                        "y"
+                        if ingested_count == 1
+                        else "ies"
+                    )
+                    + " added"
+                ),
+                state=PresentationState.SUCCESS,
+                detail=(
+                    f"{duplicate_count} already known."
+                    if duplicate_count
+                    else None
+                ),
+                meta_data={
+                    "discovered_count": len(
+                        candidates
+                    ),
+                    "ingested_count": (
+                        ingested_count
+                    ),
+                    "duplicate_count": (
+                        duplicate_count
+                    ),
+                },
+            )
+
             return JobsDelegationResult(
                 status=DelegationStatus.SUCCEEDED,
                 job_ids=job_ids,
@@ -121,6 +242,16 @@ class GideonJobsDelegationPort:
             )
 
         except Exception as exc:
+            self._present(
+                title=(
+                    "Job discovery encountered an error"
+                ),
+                state=PresentationState.ERROR,
+                detail=str(
+                    exc
+                ),
+            )
+
             return JobsDelegationResult(
                 status=DelegationStatus.FAILED,
                 started_at=started_at,

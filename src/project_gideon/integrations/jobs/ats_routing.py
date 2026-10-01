@@ -1,7 +1,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from pydantic import (
     BaseModel,
@@ -15,6 +15,11 @@ from project_gideon.models.ats_discovery import (
 )
 from project_gideon.models.delegation import (
     JobsDelegationRequest,
+)
+from project_gideon.models.presentation import (
+    GideonPresentationEvent,
+    PresentationEventType,
+    PresentationState,
 )
 from project_gideon.models.job_ingestion import (
     JobIngestionCandidate,
@@ -68,6 +73,13 @@ class ATSRegistrationJobAcquisitionRouter:
         ],
     ) -> None:
         self._discovery = discovery
+        self._presentation_sink: (
+            Callable[
+                [GideonPresentationEvent],
+                None,
+            ]
+            | None
+        ) = None
 
         self._providers = {
             provider.provider: provider
@@ -81,6 +93,44 @@ class ATSRegistrationJobAcquisitionRouter:
             raise ValueError(
                 "Duplicate ATS provider acquisition adapters."
             )
+
+    def bind_presentation(
+        self,
+        *,
+        presentation_sink: Callable[
+            [GideonPresentationEvent],
+            None,
+        ]
+        | None,
+    ) -> None:
+        self._presentation_sink = presentation_sink
+
+    def _present(
+        self,
+        *,
+        title: str,
+        state: PresentationState = PresentationState.IN_PROGRESS,
+        detail: str | None = None,
+        source_url: str | None = None,
+        meta_data: dict[str, object] | None = None,
+    ) -> None:
+        if self._presentation_sink is None:
+            return
+
+        self._presentation_sink(
+            GideonPresentationEvent(
+                type=PresentationEventType.ACTIVITY,
+                state=state,
+                phase="jobs",
+                faction="jobs",
+                title=title,
+                detail=detail,
+                source_url=source_url,
+                meta_data=dict(
+                    meta_data or {}
+                ),
+            )
+        )
 
     def _load_parameters(
         self,
@@ -140,6 +190,16 @@ class ATSRegistrationJobAcquisitionRouter:
         ATSRegistrationAcquisitionPort,
         object,
     ]:
+        self._present(
+            title=(
+                f"Identifying {target.company_name}'s "
+                "recruiting system"
+            ),
+            detail=(
+                "Checking employer-owned recruiting sources."
+            ),
+        )
+
         result = self._discovery.discover(
             target
         )
@@ -155,6 +215,31 @@ class ATSRegistrationJobAcquisitionRouter:
             )
 
         registration = result.registration
+
+        self._present(
+            title=(
+                f"Verified recruiting source for "
+                f"{target.company_name}"
+            ),
+            state=PresentationState.SUCCESS,
+            detail=(
+                f"Using verified "
+                f"{registration.provider.value} "
+                "employer data."
+            ),
+            source_url=(
+                str(
+                    registration.careers_url
+                )
+                if registration.careers_url
+                else None
+            ),
+            meta_data={
+                "provider": (
+                    registration.provider.value
+                ),
+            },
+        )
 
         provider = self._providers.get(
             registration.provider
@@ -197,15 +282,43 @@ class ATSRegistrationJobAcquisitionRouter:
                 method,
             )
 
+            self._present(
+                title=(
+                    f"Fetching current roles from "
+                    f"{target.company_name}"
+                ),
+            )
+
+            discovered = operation(
+                registration=registration,
+                request=request,
+                max_jobs=(
+                    parameters
+                    .max_jobs_per_employer
+                ),
+            )
+
             candidates.extend(
-                operation(
-                    registration=registration,
-                    request=request,
-                    max_jobs=(
-                        parameters
-                        .max_jobs_per_employer
+                discovered
+            )
+
+            self._present(
+                title=(
+                    f"Found {len(discovered)} "
+                    f"current role"
+                    + (
+                        ""
+                        if len(discovered) == 1
+                        else "s"
+                    )
+                    + f" at {target.company_name}"
+                ),
+                state=PresentationState.SUCCESS,
+                meta_data={
+                    "count": len(
+                        discovered
                     ),
-                )
+                },
             )
 
         return candidates

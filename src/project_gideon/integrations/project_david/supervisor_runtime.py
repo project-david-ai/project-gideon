@@ -91,6 +91,10 @@ def build_supervisor_session_service(
     )
 
     if jobs_service is not None:
+        jobs_service.bind_presentation(
+            presentation_sink=presentation_sink,
+        )
+
         dispatcher.register(
             JOBS_DELEGATE_TOOL_NAME,
             create_jobs_delegate_handler(
