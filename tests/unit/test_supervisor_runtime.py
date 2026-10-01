@@ -9,9 +9,29 @@ from project_gideon.integrations.project_david.config import (
 from project_gideon.integrations.project_david.supervisor_session import (
     SupervisorSessionService,
 )
+from project_gideon.models.delegation import (
+    DelegationStatus,
+    JobsDelegationResult,
+)
 from project_gideon.models.runtime import (
     ProjectDavidRuntimeBindings,
 )
+from project_gideon.services.delegation import (
+    JobsDelegationService,
+)
+
+
+class FakeJobsPort:
+    def delegate_jobs(
+        self,
+        request,
+    ):
+        return JobsDelegationResult(
+            status=DelegationStatus.SUCCEEDED,
+            job_ids=["job-1"],
+            discovered_count=1,
+            ingested_count=1,
+        )
 
 
 class FakeFactory:
@@ -88,3 +108,65 @@ def test_composition_root_rejects_non_ready_bindings():
             config=make_config(),
             bindings=bindings,
         )
+
+
+def test_composition_root_registers_jobs_delegate_when_service_supplied(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        runtime_module,
+        "resolve_provider_api_key",
+        lambda: "provider-key",
+    )
+
+    bindings = ProjectDavidRuntimeBindings(
+        assistant_name="gideon-supervisor",
+        assistant_id="assistant-1",
+        meta_data={
+            "ready": True,
+        },
+    )
+
+    result = runtime_module.build_supervisor_session_service(
+        client=SimpleNamespace(),
+        client_factory=FakeFactory(),
+        config=make_config(),
+        bindings=bindings,
+        jobs_service=JobsDelegationService(
+            FakeJobsPort()
+        ),
+    )
+
+    assert result._dispatcher.names() == (
+        "jobs_delegate",
+        "research_delegate",
+    )
+
+
+def test_composition_root_does_not_fake_jobs_implementation(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        runtime_module,
+        "resolve_provider_api_key",
+        lambda: "provider-key",
+    )
+
+    bindings = ProjectDavidRuntimeBindings(
+        assistant_name="gideon-supervisor",
+        assistant_id="assistant-1",
+        meta_data={
+            "ready": True,
+        },
+    )
+
+    result = runtime_module.build_supervisor_session_service(
+        client=SimpleNamespace(),
+        client_factory=FakeFactory(),
+        config=make_config(),
+        bindings=bindings,
+    )
+
+    assert result._dispatcher.names() == (
+        "research_delegate",
+    )

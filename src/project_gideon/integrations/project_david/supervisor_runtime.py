@@ -12,6 +12,10 @@ from project_gideon.integrations.project_david.config import (
 from project_gideon.integrations.project_david.consumer_tools.dispatcher import (
     ConsumerToolDispatcher,
 )
+from project_gideon.integrations.project_david.consumer_tools.jobs import (
+    JOBS_DELEGATE_TOOL_NAME,
+    create_jobs_delegate_handler,
+)
 from project_gideon.integrations.project_david.consumer_tools.research import (
     RESEARCH_DELEGATE_TOOL_NAME,
     create_research_delegate_handler,
@@ -30,6 +34,7 @@ from project_gideon.models.runtime import (
     ProjectDavidRuntimeBindings,
 )
 from project_gideon.services.delegation import (
+    JobsDelegationService,
     ResearchDelegationService,
 )
 
@@ -40,6 +45,7 @@ def build_supervisor_session_service(
     client_factory: ProjectDavidClientFactory,
     config: ProjectDavidConfig,
     bindings: ProjectDavidRuntimeBindings,
+    jobs_service: JobsDelegationService | None = None,
     presentation_sink: Callable[
         [GideonPresentationEvent],
         None,
@@ -83,6 +89,14 @@ def build_supervisor_session_service(
             research_service
         ),
     )
+
+    if jobs_service is not None:
+        dispatcher.register(
+            JOBS_DELEGATE_TOOL_NAME,
+            create_jobs_delegate_handler(
+                jobs_service
+            ),
+        )
 
     return SupervisorSessionService(
         client=client,

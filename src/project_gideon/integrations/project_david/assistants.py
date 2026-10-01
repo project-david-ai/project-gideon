@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Protocol, Sequence
 
+from project_gideon.integrations.project_david.consumer_tools.jobs import (
+    build_jobs_delegate_tool,
+)
 from project_gideon.integrations.project_david.consumer_tools.research import (
     build_research_delegate_tool,
 )
@@ -25,6 +28,10 @@ user approval enforced by Gideon's application services.
 When external evidence gathering or substantial research is required, use
 research_delegate. The research faction owns its own research orchestration;
 you remain the career supervisor.
+
+When job discovery, ingestion, or refresh of canonical job-domain state is
+required, use jobs_delegate. The jobs faction owns job acquisition and
+canonical job reconciliation; you remain the career supervisor.
 """.strip()
 
 
@@ -87,6 +94,7 @@ class GideonAssistantRegistry:
 
         tools = [
             build_research_delegate_tool(),
+            build_jobs_delegate_tool(),
         ]
 
         updates = {
