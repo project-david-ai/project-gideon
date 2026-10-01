@@ -96,10 +96,40 @@ class ATSRegistrationJobAcquisitionRouter:
                 f"source={request.source!r}."
             )
 
+        payload = dict(
+            request.parameters
+        )
+
+        if request.employers:
+            if "employers" in payload:
+                raise ValueError(
+                    "Employer targets were supplied through both "
+                    "JobsDelegationRequest.employers and parameters."
+                )
+
+            payload["employers"] = [
+                employer.model_dump(
+                    mode="json",
+                    exclude_none=True,
+                )
+                for employer in request.employers
+            ]
+
+        if request.max_jobs_per_employer is not None:
+            if "max_jobs_per_employer" in payload:
+                raise ValueError(
+                    "max_jobs_per_employer was supplied through both "
+                    "the typed request field and parameters."
+                )
+
+            payload[
+                "max_jobs_per_employer"
+            ] = request.max_jobs_per_employer
+
         return (
             EmployerATSAcquisitionParameters
             .model_validate(
-                request.parameters
+                payload
             )
         )
 

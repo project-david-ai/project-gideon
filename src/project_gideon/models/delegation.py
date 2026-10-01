@@ -6,6 +6,10 @@ from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
+from project_gideon.models.ats_discovery import (
+    EmployerTarget,
+)
+
 
 def utc_now() -> datetime:
     return datetime.now(
@@ -149,6 +153,17 @@ class JobsDelegationRequest(BaseModel):
 
     query: str | None = None
     source: str | None = None
+
+    employers: list[
+        EmployerTarget
+    ] = Field(
+        default_factory=list
+    )
+
+    max_jobs_per_employer: int | None = Field(
+        default=None,
+        ge=1,
+    )
 
     parameters: dict[str, Any] = Field(
         default_factory=dict

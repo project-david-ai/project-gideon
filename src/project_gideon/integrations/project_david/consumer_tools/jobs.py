@@ -28,6 +28,9 @@ def build_jobs_delegate_tool() -> dict[str, Any]:
             "description": (
                 "Delegate job-domain work to Gideon's dedicated jobs faction. "
                 "Use this for job discovery, ingestion, or refresh operations. "
+                "For employer-specific discovery, supply typed employer targets "
+                "through employers; ATS provider and board identifiers are "
+                "resolved by the jobs faction and should not be guessed. "
                 "The jobs faction may create or reconcile authoritative "
                 "canonical Job records and returns canonical job identifiers."
             ),
