@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
 from urllib.parse import (
     urljoin,
@@ -17,6 +16,13 @@ from urllib.request import (
 from project_gideon.integrations.jobs.greenhouse import (
     GREENHOUSE_API_ROOT,
     GreenhouseJobsResponse,
+)
+from project_gideon.integrations.jobs.greenhouse_employer_evidence import (
+    GreenhouseEmployerEvidenceResolver,
+)
+from project_gideon.integrations.jobs.greenhouse_http import (
+    ATSPageResponse,
+    PageGet,
 )
 from project_gideon.models.ats_discovery import (
     ATSDiscoveryEvidence,
@@ -48,21 +54,6 @@ DEFAULT_CAREER_PATHS = (
     "/jobs",
 )
 
-
-@dataclass(
-    frozen=True,
-)
-class ATSPageResponse:
-    requested_url: str
-    final_url: str
-    status_code: int
-    text: str
-
-
-PageGet = Callable[
-    [str],
-    ATSPageResponse,
-]
 
 JsonGet = Callable[
     [str],
@@ -183,6 +174,11 @@ class GreenhouseATSDetector:
         self._page_get = page_get
         self._json_get = json_get
         self._career_paths = career_paths
+        self._employer_evidence = (
+            GreenhouseEmployerEvidenceResolver(
+                page_get=page_get
+            )
+        )
 
     def detect(
         self,
@@ -212,17 +208,42 @@ class GreenhouseATSDetector:
                     response.text
                 )
 
-            if token is None:
-                continue
+            if token is not None:
+                registration = self._verify(
+                    target=target,
+                    token=token,
+                    careers_url=evidence_url,
+                )
 
-            registration = self._verify(
-                target=target,
-                token=token,
-                careers_url=evidence_url,
+                if registration is not None:
+                    return registration
+
+            listing_evidence = (
+                self._employer_evidence
+                .extract_listing_evidence(
+                    response
+                )
             )
 
-            if registration is not None:
-                return registration
+            for listing in listing_evidence[:3]:
+                embed = (
+                    self._employer_evidence
+                    .resolve_embed_evidence(
+                        listing=listing
+                    )
+                )
+
+                if embed is None:
+                    continue
+
+                registration = self._verify(
+                    target=target,
+                    token=embed.board_token,
+                    careers_url=evidence_url,
+                )
+
+                if registration is not None:
+                    return registration
 
         return None
 
