@@ -83,3 +83,11 @@ from project_gideon.models.presentation import (
     PresentationEventType,
     PresentationState,
 )
+
+from project_gideon.models.job_ingestion import (
+    JobIdentity,
+    JobIngestionCandidate,
+    JobIngestionResult,
+    JobMatchType,
+    JobUpsertResult,
+)
