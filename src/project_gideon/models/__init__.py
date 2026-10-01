@@ -35,6 +35,11 @@ from project_gideon.models.job import (
 )
 
 __all__ = [
+    "PresentationState",
+    "PresentationEventType",
+    "GideonPresentationEvent",
+    "SupervisorToolCallRecord",
+    "SupervisorTurnResult",
     "ProjectDavidRuntimeBindings",
     "ApplicationPreparationResult",
     "ApplicationAnswer",
@@ -66,4 +71,15 @@ from project_gideon.models.preparation import (
 )
 from project_gideon.models.runtime import (
     ProjectDavidRuntimeBindings,
+)
+
+from project_gideon.models.session import (
+    SupervisorToolCallRecord,
+    SupervisorTurnResult,
+)
+
+from project_gideon.models.presentation import (
+    GideonPresentationEvent,
+    PresentationEventType,
+    PresentationState,
 )

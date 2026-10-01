@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import json
 import os
 from datetime import datetime, timezone
@@ -7,6 +9,12 @@ from typing import Any
 
 from projectdavid import ContentEvent
 
+from project_gideon.models.presentation import (
+    GideonPresentationEvent,
+)
+from project_gideon.integrations.project_david.activity_projector import (
+    ActivityProjector,
+)
 from project_gideon.models.delegation import (
     DelegationStatus,
     ResearchDelegationRequest,
@@ -73,6 +81,70 @@ class ProjectDavidResearchDelegationPort:
         self._provider_api_key = provider_api_key
         self._assistant_name = assistant_name
         self._max_turns = max_turns
+
+    def bind_presentation(
+        self,
+        *,
+        presentation_sink: Callable[
+            [GideonPresentationEvent],
+            None,
+        ]
+        | None,
+        activity_projector: ActivityProjector | None = None,
+    ) -> None:
+        """
+        Bind the research faction to Gideon's portable presentation stream.
+
+        The research Entity remains isolated. Only projected semantic activity
+        crosses the faction boundary.
+        """
+
+        self._presentation_sink = presentation_sink
+
+        self._activity_projector = (
+            activity_projector
+            or ActivityProjector()
+        )
+
+    def _relay_presentation_event(
+        self,
+        event,
+    ) -> None:
+        sink = getattr(
+            self,
+            "_presentation_sink",
+            None,
+        )
+
+        if sink is None:
+            return
+
+        projector = getattr(
+            self,
+            "_activity_projector",
+            None,
+        )
+
+        if projector is None:
+            projector = ActivityProjector()
+
+            self._activity_projector = projector
+
+        for presentation_event in projector.project(
+            event
+        ):
+            if presentation_event.faction is None:
+                presentation_event = (
+                    presentation_event.model_copy(
+                        update={
+                            "faction": "research",
+                        }
+                    )
+                )
+
+            sink(
+                presentation_event
+            )
 
     def _get_client(
         self,
@@ -364,6 +436,10 @@ class ProjectDavidResearchDelegationPort:
                 model=self._model,
                 max_turns=self._max_turns,
             ):
+                self._relay_presentation_event(
+                    event
+                )
+
                 events.append(
                     event
                 )
