@@ -116,12 +116,11 @@ def test_failed_jobs_result_requires_error():
         )
 
 
-@pytest.mark.asyncio
-async def test_research_service_uses_only_research_port():
+def test_research_service_uses_only_research_port():
     calls = []
 
     class FakeResearchPort:
-        async def delegate_research(
+        def delegate_research(
             self,
             request,
         ):
@@ -141,7 +140,7 @@ async def test_research_service_uses_only_research_port():
         objective="Research Acme.",
     )
 
-    result = await service.delegate(
+    result = service.delegate(
         request
     )
 
@@ -149,12 +148,11 @@ async def test_research_service_uses_only_research_port():
     assert result.report == "Research complete."
 
 
-@pytest.mark.asyncio
-async def test_jobs_service_uses_only_jobs_port():
+def test_jobs_service_uses_only_jobs_port():
     calls = []
 
     class FakeJobsPort:
-        async def delegate_jobs(
+        def delegate_jobs(
             self,
             request,
         ):
@@ -177,7 +175,7 @@ async def test_jobs_service_uses_only_jobs_port():
         query="python engineer",
     )
 
-    result = await service.delegate(
+    result = service.delegate(
         request
     )
 

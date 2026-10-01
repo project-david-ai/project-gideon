@@ -14,10 +14,10 @@ from project_gideon.ports.delegation import (
 
 class ResearchDelegationService:
     """
-    Gideon's deterministic mediation boundary for research work.
+    Deterministic mediation boundary for research work.
 
     The career supervisor delegates a bounded objective through this service.
-    It does not directly control or impersonate research workers.
+    It does not control or impersonate research workers.
     """
 
     def __init__(
@@ -26,21 +26,21 @@ class ResearchDelegationService:
     ) -> None:
         self._port = port
 
-    async def delegate(
+    def delegate(
         self,
         request: ResearchDelegationRequest,
     ) -> ResearchDelegationResult:
-        return await self._port.delegate_research(
+        return self._port.delegate_research(
             request
         )
 
 
 class JobsDelegationService:
     """
-    Gideon's deterministic mediation boundary for job-domain work.
+    Deterministic mediation boundary for job-domain work.
 
-    Kept intentionally separate from research delegation because this faction
-    may create or reconcile canonical durable job records.
+    This faction remains separate because it may create or reconcile
+    authoritative durable job records.
     """
 
     def __init__(
@@ -49,10 +49,10 @@ class JobsDelegationService:
     ) -> None:
         self._port = port
 
-    async def delegate(
+    def delegate(
         self,
         request: JobsDelegationRequest,
     ) -> JobsDelegationResult:
-        return await self._port.delegate_jobs(
+        return self._port.delegate_jobs(
             request
         )

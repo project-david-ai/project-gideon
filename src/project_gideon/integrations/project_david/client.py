@@ -23,3 +23,16 @@ class ProjectDavidClientFactory:
             base_url=self._config.base_url,
             api_key=self._config.api_key,
         )
+
+    def create_research_client(self) -> Entity:
+        """
+        Create an isolated Project David Entity for the research faction.
+
+        The research stream must not share mutable synchronous-stream state
+        with the career supervisor.
+        """
+
+        return Entity(
+            base_url=self._config.base_url,
+            api_key=self._config.api_key,
+        )

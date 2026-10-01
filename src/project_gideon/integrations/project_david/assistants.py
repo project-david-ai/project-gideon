@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from typing import Any, Protocol, Sequence
 
+from project_gideon.integrations.project_david.consumer_tools.research import (
+    build_research_delegate_tool,
+)
+
 
 GIDEON_SUPERVISOR_INSTRUCTIONS = """
 You are Gideon, a career-search supervisor.
@@ -17,6 +21,10 @@ guessed.
 
 You may prepare an application, but external submission requires explicit
 user approval enforced by Gideon's application services.
+
+When external evidence gathering or substantial research is required, use
+research_delegate. The research faction owns its own research orchestration;
+you remain the career supervisor.
 """.strip()
 
 
@@ -24,7 +32,10 @@ class AssistantsClientProtocol(Protocol):
     def list_assistants(self) -> Sequence[Any]:
         ...
 
-    def create_assistant(self, **kwargs: Any) -> Any:
+    def create_assistant(
+        self,
+        **kwargs: Any,
+    ) -> Any:
         ...
 
     def update_assistant(
@@ -43,8 +54,7 @@ class GideonAssistantRegistry:
     """
     Reconcile Gideon's logical supervisor identity with Project David.
 
-    The assistant ID is discovered from Project David and must not be
-    hard-coded into Gideon configuration.
+    Runtime IDs are Project David resources and are never configuration.
     """
 
     def __init__(
@@ -62,7 +72,11 @@ class GideonAssistantRegistry:
         matches = [
             assistant
             for assistant in self._assistants.list_assistants()
-            if getattr(assistant, "name", None) == name
+            if getattr(
+                assistant,
+                "name",
+                None,
+            ) == name
         ]
 
         if len(matches) > 1:
@@ -71,19 +85,25 @@ class GideonAssistantRegistry:
                 f"logical name={name!r}."
             )
 
+        tools = [
+            build_research_delegate_tool(),
+        ]
+
+        updates = {
+            "name": name,
+            "model": model,
+            "instructions": GIDEON_SUPERVISOR_INSTRUCTIONS,
+            "tools": tools,
+        }
+
         if matches:
             assistant = matches[0]
 
             return self._assistants.update_assistant(
                 assistant_id=assistant.id,
-                name=name,
-                model=model,
-                instructions=GIDEON_SUPERVISOR_INSTRUCTIONS,
+                **updates,
             )
 
         return self._assistants.create_assistant(
-            name=name,
-            model=model,
-            instructions=GIDEON_SUPERVISOR_INSTRUCTIONS,
-            tools=[],
+            **updates,
         )
