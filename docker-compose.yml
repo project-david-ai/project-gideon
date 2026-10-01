@@ -1,0 +1,51 @@
+services:
+  gideon:
+    image: project-gideon:${GIDEON_IMAGE_TAG:-latest}
+    init: true
+    restart: unless-stopped
+
+    env_file:
+      - .tests.env
+
+    environment:
+      GIDEON_ASSISTANT_NAME: ${GIDEON_ASSISTANT_NAME:-gideon-supervisor}
+      PLAYWRIGHT_MCP_NAME: ${PLAYWRIGHT_MCP_NAME:-playwright-primary}
+      PLAYWRIGHT_MCP_URL: http://playwright-mcp:8931/mcp
+
+    depends_on:
+      playwright-mcp:
+        condition: service_started
+
+    networks:
+      - gideon-runtime
+
+  playwright-mcp:
+    image: mcr.microsoft.com/playwright/mcp
+    init: true
+    restart: unless-stopped
+
+    entrypoint:
+      - node
+      - /app/cli.js
+
+    command:
+      - --headless
+      - --browser
+      - chromium
+      - --no-sandbox
+      - --port
+      - "8931"
+      - --host
+      - 0.0.0.0
+      - --allowed-hosts
+      - playwright-mcp:8931
+
+    expose:
+      - "8931"
+
+    networks:
+      - gideon-runtime
+
+networks:
+  gideon-runtime:
+    driver: bridge
