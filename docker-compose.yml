@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
 
     env_file:
-      - .tests.env
+      - .env
 
     environment:
       GIDEON_ASSISTANT_NAME: ${GIDEON_ASSISTANT_NAME:-gideon-supervisor}

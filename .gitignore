@@ -1,4 +1,4 @@
-﻿# Python
+# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -16,7 +16,6 @@ venv/
 # Local environment / credentials
 .env
 .env.*
-.tests.env
 
 # Test / tooling caches
 .pytest_cache/

@@ -9,6 +9,9 @@ from project_gideon.integrations.project_david import (
     ProjectDavidBootstrap,
     ProjectDavidConfig,
 )
+from project_gideon.integrations.project_david.mcp_policy import (
+    PLAYWRIGHT_PREPARATION_TOOL_NAMES,
+)
 
 
 class FakeAssistantsClient:
@@ -20,7 +23,10 @@ class FakeAssistantsClient:
     def list_assistants(self):
         return list(self.records)
 
-    def create_assistant(self, **kwargs):
+    def create_assistant(
+        self,
+        **kwargs,
+    ):
         assistant = SimpleNamespace(
             id=f"assistant_{len(self.records) + 1}",
             **kwargs,
@@ -43,7 +49,11 @@ class FakeAssistantsClient:
         )
 
         for key, value in updates.items():
-            setattr(assistant, key, value)
+            setattr(
+                assistant,
+                key,
+                value,
+            )
 
         self.updated.append(
             {
@@ -56,17 +66,61 @@ class FakeAssistantsClient:
 
 
 class FakeToolCollection:
-    def __init__(self):
-        self.discovered = True
+    def __init__(
+        self,
+        tools,
+    ):
+        self._tools = list(tools)
+
+    def __iter__(self):
+        return iter(self._tools)
+
+    def __len__(self):
+        return len(self._tools)
+
+    def names(self):
+        return [
+            tool.remote_name
+            for tool in self._tools
+        ]
+
+    def select(
+        self,
+        *names,
+    ):
+        by_name = {
+            tool.remote_name: tool
+            for tool in self._tools
+        }
+
+        missing = [
+            name
+            for name in names
+            if name not in by_name
+        ]
+
+        if missing:
+            raise ValueError(
+                ", ".join(missing)
+            )
+
+        return FakeToolCollection(
+            [
+                by_name[name]
+                for name in names
+            ]
+        )
 
 
 class FakeMcpClient:
     def __init__(self):
         self.servers = []
         self.created = []
-        self.updated = []
         self.discovery_count = 0
-        self.attach_count = 0
+
+        self.attached = []
+        self.attach_calls = []
+        self.detach_calls = []
 
     def list_servers(self):
         return list(self.servers)
@@ -93,38 +147,63 @@ class FakeMcpClient:
         server_id,
         **updates,
     ):
-        server = next(
-            item
-            for item in self.servers
-            if item.id == server_id
+        raise AssertionError(
+            "Gideon must not silently mutate MCP registration URL."
         )
 
-        for key, value in updates.items():
-            setattr(server, key, value)
-
-        self.updated.append(
-            {
-                "server_id": server_id,
-                **updates,
-            }
-        )
-
-        return server
-
-    def discover_tools(self, server):
+    def discover_tools(
+        self,
+        server,
+    ):
         self.discovery_count += 1
-        return FakeToolCollection()
 
-    def list_assistant_tools(self, assistant_id):
-        return []
+        names = list(
+            PLAYWRIGHT_PREPARATION_TOOL_NAMES
+        )
+
+        # Remote discovery may expose capabilities Gideon does not grant.
+        names.extend(
+            [
+                "browser_click",
+                "browser_run_code_unsafe",
+            ]
+        )
+
+        return FakeToolCollection(
+            [
+                SimpleNamespace(
+                    name=name,
+                    remote_name=name,
+                    server_id=server.id,
+                )
+                for name in names
+            ]
+        )
+
+    def list_assistant_tools(
+        self,
+        assistant_id,
+    ):
+        return list(self.attached)
 
     def attach_tools(
         self,
-        *,
         assistant_id,
+        *,
         tools,
     ):
-        self.attach_count += 1
+        tools = list(tools)
+
+        self.attach_calls.append(
+            [
+                tool.remote_name
+                for tool in tools
+            ]
+        )
+
+        self.attached.extend(tools)
+
+        return list(self.attached)
 
     def detach_assistant_tools(
         self,
@@ -133,9 +212,18 @@ class FakeMcpClient:
         server_id,
         tools,
     ):
-        raise AssertionError(
-            "No detach should occur in bootstrap foundation test."
+        self.detach_calls.append(
+            list(tools)
         )
+
+        self.attached = [
+            tool
+            for tool in self.attached
+            if not (
+                tool.server_id == server_id
+                and tool.remote_name in tools
+            )
+        ]
 
 
 class FakeEntity:
@@ -146,19 +234,21 @@ class FakeEntity:
 
 def make_config():
     return ProjectDavidConfig(
-        base_url="http://project-david",
+        base_url="https://project-david.example",
         api_key="test-key",
         assistant_name="gideon-supervisor",
         assistant_model="test/model",
         playwright_mcp_name="playwright-primary",
-        playwright_mcp_url="http://playwright-mcp/mcp",
+        playwright_mcp_url="https://playwright.example/mcp",
     )
 
 
 def test_assistant_is_created_when_missing():
     client = FakeAssistantsClient()
 
-    registry = GideonAssistantRegistry(client)
+    registry = GideonAssistantRegistry(
+        client
+    )
 
     assistant = registry.ensure_supervisor(
         name="gideon-supervisor",
@@ -172,7 +262,9 @@ def test_assistant_is_created_when_missing():
 def test_assistant_reconciliation_is_idempotent():
     client = FakeAssistantsClient()
 
-    registry = GideonAssistantRegistry(client)
+    registry = GideonAssistantRegistry(
+        client
+    )
 
     first = registry.ensure_supervisor(
         name="gideon-supervisor",
@@ -203,7 +295,9 @@ def test_duplicate_logical_assistant_is_rejected():
         ),
     ]
 
-    registry = GideonAssistantRegistry(client)
+    registry = GideonAssistantRegistry(
+        client
+    )
 
     with pytest.raises(
         AssistantReconciliationError,
@@ -215,40 +309,24 @@ def test_duplicate_logical_assistant_is_rejected():
         )
 
 
-def test_mcp_server_is_created_when_missing():
+def test_mcp_server_is_created_from_configured_endpoint():
     client = FakeMcpClient()
 
-    registry = GideonMcpRegistry(client)
+    registry = GideonMcpRegistry(
+        client
+    )
 
     server = registry.ensure_server(
         name="playwright-primary",
-        url="http://playwright/mcp",
+        url="https://tenant-playwright.example/mcp",
     )
 
     assert server.id == "mcp_server_1"
+    assert server.url == "https://tenant-playwright.example/mcp"
     assert len(client.created) == 1
 
 
-def test_mcp_server_is_reused_when_matching():
-    client = FakeMcpClient()
-
-    registry = GideonMcpRegistry(client)
-
-    first = registry.ensure_server(
-        name="playwright-primary",
-        url="http://playwright/mcp",
-    )
-
-    second = registry.ensure_server(
-        name="playwright-primary",
-        url="http://playwright/mcp",
-    )
-
-    assert second.id == first.id
-    assert len(client.created) == 1
-
-
-def test_bootstrap_discovers_but_does_not_attach_tools():
+def test_bootstrap_reconciles_governed_playwright_tools():
     entity = FakeEntity()
 
     bootstrap = ProjectDavidBootstrap(
@@ -263,12 +341,30 @@ def test_bootstrap_discovers_but_does_not_attach_tools():
 
     assert entity.mcp.discovery_count == 1
 
-    # Critical security property:
-    # MCP discovery alone never grants capabilities.
-    assert entity.mcp.attach_count == 0
+    assert entity.mcp.attach_calls == [
+        list(
+            PLAYWRIGHT_PREPARATION_TOOL_NAMES
+        )
+    ]
+
+    assert {
+        tool.remote_name
+        for tool in entity.mcp.attached
+    } == set(
+        PLAYWRIGHT_PREPARATION_TOOL_NAMES
+    )
+
+    assert (
+        bindings.meta_data[
+            "playwright_attached_count"
+        ]
+        == len(
+            PLAYWRIGHT_PREPARATION_TOOL_NAMES
+        )
+    )
 
 
-def test_bootstrap_is_idempotent():
+def test_bootstrap_attachment_reconciliation_is_idempotent():
     entity = FakeEntity()
 
     bootstrap = ProjectDavidBootstrap(
@@ -282,5 +378,19 @@ def test_bootstrap_is_idempotent():
     assert second.assistant_id == first.assistant_id
     assert second.mcp_server_id == first.mcp_server_id
 
-    assert len(entity.assistants.created) == 1
-    assert len(entity.mcp.created) == 1
+    assert len(
+        entity.assistants.created
+    ) == 1
+
+    assert len(
+        entity.mcp.created
+    ) == 1
+
+    # Only the first reconcile needs to attach anything.
+    assert len(
+        entity.mcp.attach_calls
+    ) == 1
+
+    assert entity.mcp.detach_calls == []
+
+    assert entity.mcp.discovery_count == 2

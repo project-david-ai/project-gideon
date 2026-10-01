@@ -6,8 +6,12 @@ from project_gideon.integrations.project_david.assistants import (
 from project_gideon.integrations.project_david.config import (
     ProjectDavidConfig,
 )
+from project_gideon.integrations.project_david.mcp_policy import (
+    select_playwright_preparation_tools,
+)
 from project_gideon.integrations.project_david.mcp_registry import (
     GideonMcpRegistry,
+    _attachment_belongs_to_server,
 )
 from project_gideon.models import (
     ProjectDavidRuntimeBindings,
@@ -16,11 +20,18 @@ from project_gideon.models import (
 
 class ProjectDavidBootstrap:
     """
-    Idempotently resolve Gideon's Project David resources.
+    Reconcile Gideon's composition against the Project David API.
 
-    Tool attachment is deliberately not performed until Gideon has
-    reconciled the actual discovered Playwright tool names against its
-    semantic capability policy.
+    Readiness requires:
+
+    - the logical Gideon supervisor exists;
+    - the configured Playwright MCP registration exists;
+    - live MCP discovery succeeds;
+    - Gideon's explicit capability policy can be satisfied;
+    - durable assistant attachments match that policy.
+
+    Project David deployment and network topology are intentionally outside
+    Gideon's responsibility.
     """
 
     def __init__(
@@ -32,7 +43,9 @@ class ProjectDavidBootstrap:
         self._client = client
         self._config = config
 
-    def reconcile(self) -> ProjectDavidRuntimeBindings:
+    def reconcile(
+        self,
+    ) -> ProjectDavidRuntimeBindings:
         assistant_registry = GideonAssistantRegistry(
             self._client.assistants
         )
@@ -51,15 +64,39 @@ class ProjectDavidBootstrap:
             url=self._config.playwright_mcp_url,
         )
 
-        # Deliberate discovery only.
-        #
-        # We do NOT attach all tools here. The discovered collection must
-        # first be reconciled with Gideon's explicit capability policy.
-        mcp_registry.discover(server)
+        discovered = mcp_registry.discover(
+            server
+        )
+
+        selected = select_playwright_preparation_tools(
+            discovered
+        )
+
+        attached = mcp_registry.reconcile_assistant_tools(
+            assistant_id=assistant.id,
+            server=server,
+            desired_tools=selected,
+        )
+
+        attached_playwright = [
+            tool
+            for tool in attached
+            if _attachment_belongs_to_server(
+                tool,
+                server,
+            )
+        ]
 
         return ProjectDavidRuntimeBindings(
             assistant_name=self._config.assistant_name,
             assistant_id=assistant.id,
             mcp_server_name=self._config.playwright_mcp_name,
             mcp_server_id=server.id,
+            meta_data={
+                "ready": True,
+                "playwright_tool_names": selected.names(),
+                "playwright_attached_count": len(
+                    attached_playwright
+                ),
+            },
         )
