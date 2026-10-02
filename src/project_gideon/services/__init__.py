@@ -1,3 +1,7 @@
+from project_gideon.services.application_campaign import (
+    ApplicationCampaignError,
+    ApplicationCampaignService,
+)
 from project_gideon.services.application_lifecycle import (
     ApplicationLifecycleService,
     InvalidApplicationTransition,
@@ -14,6 +18,8 @@ from project_gideon.services.submission_guard import (
 )
 
 __all__ = [
+    "ApplicationCampaignError",
+    "ApplicationCampaignService",
     "BrowserActionFailed",
     "ApplicationPreparationService",
     "ApplicationPreparationError",
