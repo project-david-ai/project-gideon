@@ -9,6 +9,10 @@ from project_gideon.integrations.project_david.client import (
 from project_gideon.integrations.project_david.config import (
     ProjectDavidConfig,
 )
+from project_gideon.integrations.project_david.consumer_tools.application_campaign import (
+    APPLICATION_CAMPAIGN_TOOL_NAME,
+    create_application_campaign_handler,
+)
 from project_gideon.integrations.project_david.consumer_tools.dispatcher import (
     ConsumerToolDispatcher,
 )
@@ -33,6 +37,9 @@ from project_gideon.models.presentation import (
 from project_gideon.models.runtime import (
     ProjectDavidRuntimeBindings,
 )
+from project_gideon.services.application_campaign import (
+    ApplicationCampaignService,
+)
 from project_gideon.services.delegation import (
     JobsDelegationService,
     ResearchDelegationService,
@@ -46,6 +53,7 @@ def build_supervisor_session_service(
     config: ProjectDavidConfig,
     bindings: ProjectDavidRuntimeBindings,
     jobs_service: JobsDelegationService | None = None,
+    campaign_service: ApplicationCampaignService | None = None,
     presentation_sink: Callable[
         [GideonPresentationEvent],
         None,
@@ -108,6 +116,14 @@ def build_supervisor_session_service(
             JOBS_DELEGATE_TOOL_NAME,
             create_jobs_delegate_handler(
                 jobs_service
+            ),
+        )
+
+    if campaign_service is not None:
+        dispatcher.register(
+            APPLICATION_CAMPAIGN_TOOL_NAME,
+            create_application_campaign_handler(
+                campaign_service
             ),
         )
 

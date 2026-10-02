@@ -173,6 +173,75 @@ def test_composition_root_registers_jobs_delegate_when_service_supplied(
     )
 
 
+
+def test_composition_root_registers_application_campaign_when_service_supplied(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        runtime_module,
+        "resolve_provider_api_key",
+        lambda: "provider-key",
+    )
+
+    bindings = ProjectDavidRuntimeBindings(
+        assistant_name="gideon-supervisor",
+        assistant_id="assistant-1",
+        meta_data={
+            "ready": True,
+        },
+    )
+
+    campaign_service = SimpleNamespace()
+
+    result = runtime_module.build_supervisor_session_service(
+        client=SimpleNamespace(),
+        client_factory=FakeFactory(),
+        config=make_config(),
+        bindings=bindings,
+        campaign_service=campaign_service,
+    )
+
+    assert result._dispatcher.names() == (
+        "application_campaign",
+        "research_delegate",
+    )
+
+
+def test_composition_root_registers_jobs_and_campaign_together(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        runtime_module,
+        "resolve_provider_api_key",
+        lambda: "provider-key",
+    )
+
+    bindings = ProjectDavidRuntimeBindings(
+        assistant_name="gideon-supervisor",
+        assistant_id="assistant-1",
+        meta_data={
+            "ready": True,
+        },
+    )
+
+    result = runtime_module.build_supervisor_session_service(
+        client=SimpleNamespace(),
+        client_factory=FakeFactory(),
+        config=make_config(),
+        bindings=bindings,
+        jobs_service=JobsDelegationService(
+            FakeJobsPort()
+        ),
+        campaign_service=SimpleNamespace(),
+    )
+
+    assert result._dispatcher.names() == (
+        "application_campaign",
+        "jobs_delegate",
+        "research_delegate",
+    )
+
+
 def test_composition_root_does_not_fake_jobs_implementation(
     monkeypatch,
 ):

@@ -39,7 +39,7 @@ class FakeAssistants:
         )
 
 
-def test_supervisor_advertises_both_cross_faction_tools():
+def test_supervisor_advertises_domain_and_cross_faction_tools():
     client = FakeAssistants()
 
     registry = GideonAssistantRegistry(
@@ -60,6 +60,7 @@ def test_supervisor_advertises_both_cross_faction_tools():
     assert names == [
         "research_delegate",
         "jobs_delegate",
+        "application_campaign",
     ]
 
     assert (
@@ -69,5 +70,15 @@ def test_supervisor_advertises_both_cross_faction_tools():
 
     assert (
         "canonical job"
+        in assistant.instructions.lower()
+    )
+
+    assert (
+        "application_campaign"
+        in assistant.instructions
+    )
+
+    assert (
+        "durable campaign state"
         in assistant.instructions.lower()
     )

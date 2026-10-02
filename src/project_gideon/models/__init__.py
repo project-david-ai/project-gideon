@@ -3,6 +3,11 @@ from project_gideon.models.application import (
     JobApplication,
     UnresolvedQuestion,
 )
+from project_gideon.models.application_campaign import (
+    ApplicationCampaignAction,
+    ApplicationCampaignRequest,
+    ApplicationCampaignResult,
+)
 from project_gideon.models.application_package import (
     ApplicationAnswer,
     ApplicationPackage,
@@ -35,6 +40,9 @@ from project_gideon.models.job import (
 )
 
 __all__ = [
+    "ApplicationCampaignAction",
+    "ApplicationCampaignRequest",
+    "ApplicationCampaignResult",
     "PresentationState",
     "PresentationEventType",
     "GideonPresentationEvent",

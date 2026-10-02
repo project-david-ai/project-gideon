@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Protocol, Sequence
 
+from project_gideon.integrations.project_david.consumer_tools.application_campaign import (
+    build_application_campaign_tool,
+)
 from project_gideon.integrations.project_david.consumer_tools.jobs import (
     build_jobs_delegate_tool,
 )
@@ -32,6 +35,11 @@ you remain the career supervisor.
 When job discovery, ingestion, or refresh of canonical job-domain state is
 required, use jobs_delegate. The jobs faction owns job acquisition and
 canonical job reconciliation; you remain the career supervisor.
+
+When the user wants to shortlist a canonical job or begin preparing an
+existing shortlisted application, use application_campaign. Gideon's
+application services own durable campaign state and lifecycle rules; never
+invent canonical job, candidate, or application identifiers.
 """.strip()
 
 
@@ -95,6 +103,7 @@ class GideonAssistantRegistry:
         tools = [
             build_research_delegate_tool(),
             build_jobs_delegate_tool(),
+            build_application_campaign_tool(),
         ]
 
         updates = {
