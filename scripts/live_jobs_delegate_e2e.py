@@ -34,16 +34,28 @@ from project_gideon.integrations.project_david.supervisor_runtime import (
     ProjectDavidConfig,
     build_supervisor_session_service,
 )
+from project_gideon.models import (
+    ApplicationState,
+    CandidateIdentity,
+    CandidateProfile,
+)
 from project_gideon.models.delegation import (
     DelegationStatus,
     JobsDelegationAction,
     JobsDelegationRequest,
+)
+from project_gideon.repositories import (
+    InMemoryApplicationRepository,
+    InMemoryCandidateRepository,
 )
 from project_gideon.repositories.job_ingestion_memory import (
     InMemoryJobIngestionRepository,
 )
 from project_gideon.services.ats_discovery import (
     ATSDiscoveryService,
+)
+from project_gideon.services.application_campaign import (
+    ApplicationCampaignService,
 )
 from project_gideon.services.delegation import (
     JobsDelegationService,
@@ -109,6 +121,40 @@ def resolve_runtime_bindings(
     return bindings
 
 
+class CanonicalJobReadAdapter:
+    """
+    Expose the authoritative ingestion repository through the read contract
+    consumed by ApplicationCampaignService.
+
+    This adapter owns no state. Reads are delegated to the same canonical
+    repository populated by JobIngestionService.
+    """
+
+    def __init__(
+        self,
+        repository: InMemoryJobIngestionRepository,
+    ) -> None:
+        self._repository = repository
+
+    async def get(
+        self,
+        job_id: str,
+        tenant_id: str,
+    ):
+        return await self._repository.get(
+            tenant_id=tenant_id,
+            job_id=job_id,
+        )
+
+    async def list_for_tenant(
+        self,
+        tenant_id: str,
+    ):
+        return await self._repository.list_for_tenant(
+            tenant_id
+        )
+
+
 def main() -> None:
     print(
         "LIVE_JOBS_DELEGATE_E2E=START"
@@ -165,6 +211,46 @@ def main() -> None:
     jobs_service = (
         JobsDelegationService(
             jobs_port
+        )
+    )
+
+    candidate_repository = (
+        InMemoryCandidateRepository()
+    )
+
+    application_repository = (
+        InMemoryApplicationRepository()
+    )
+
+    canonical_jobs = CanonicalJobReadAdapter(
+        repository
+    )
+
+    campaign_service = ApplicationCampaignService(
+        jobs=canonical_jobs,
+        candidates=candidate_repository,
+        applications=application_repository,
+    )
+
+    campaign_tenant_id = (
+        "gideon-live-e2e-supervisor"
+    )
+
+    candidate = CandidateProfile(
+        id="candidate-live-e2e",
+        tenant_id=campaign_tenant_id,
+        identity=CandidateIdentity(
+            first_name="Live",
+            last_name="Candidate",
+            email="live-candidate@example.com",
+        ),
+    )
+
+    import asyncio
+
+    asyncio.run(
+        candidate_repository.save(
+            candidate
         )
     )
 
@@ -321,24 +407,32 @@ def main() -> None:
                 config=config,
                 bindings=bindings,
                 jobs_service=jobs_service,
+                campaign_service=campaign_service,
             )
         )
 
         prompt = """
 Find up to 3 current jobs at Stripe.
 
-Use the jobs_delegate capability for job discovery.
+Use jobs_delegate for discovery.
 
 The tenant_id must be "gideon-live-e2e-supervisor".
 Use a typed employer target for Stripe.
 Do not guess or supply an ATS provider, board token, or provider-specific
 source identifier. The jobs faction must resolve Stripe's recruiting source.
 
-Do not use research_delegate, web search, or browser automation for this
-request.
+After jobs_delegate returns canonical job IDs:
 
-After the jobs tool completes, briefly tell me how many canonical jobs
-were returned.
+1. Select the first canonical job ID returned.
+2. Use application_campaign with action "shortlist".
+3. Use candidate_id "candidate-live-e2e".
+4. Use application_campaign again with action "start_preparation" using
+   the application ID returned by the shortlist operation.
+
+Do not use research_delegate, web search, or browser automation.
+
+After both campaign operations complete, report the canonical job ID,
+application ID, and final authoritative application state.
 """.strip()
 
         turn = supervisor.run(
@@ -377,10 +471,67 @@ were returned.
                 "but not executed."
             )
 
+        campaign_calls = [
+            tool_call
+            for tool_call
+            in turn.tool_calls
+            if (
+                tool_call.tool_name
+                == "application_campaign"
+            )
+        ]
+
+        if len(campaign_calls) < 2:
+            raise RuntimeError(
+                "Supervisor did not execute both "
+                "application campaign operations."
+            )
+
+        if not all(
+            tool_call.executed
+            for tool_call
+            in campaign_calls
+        ):
+            raise RuntimeError(
+                "One or more application_campaign "
+                "calls were not executed."
+            )
+
         if not turn.content.strip():
             raise RuntimeError(
                 "Supervisor did not continue "
-                "after jobs_delegate."
+                "after campaign operations."
+            )
+
+        applications = asyncio.run(
+            application_repository.list_for_tenant(
+                campaign_tenant_id
+            )
+        )
+
+        if len(applications) != 1:
+            raise RuntimeError(
+                "Expected exactly one durable application "
+                f"campaign, found {len(applications)}."
+            )
+
+        durable_application = applications[0]
+
+        if (
+            durable_application.state
+            is not ApplicationState.PREPARING
+        ):
+            raise RuntimeError(
+                "Durable application did not reach PREPARING. "
+                f"state={durable_application.state.value}"
+            )
+
+        if (
+            durable_application.candidate_id
+            != "candidate-live-e2e"
+        ):
+            raise RuntimeError(
+                "Durable application candidate mismatch."
             )
 
         print(
@@ -394,6 +545,30 @@ were returned.
 
         print(
             "SUPERVISOR_TURN_N_CONTINUATION=PASS"
+        )
+
+        print(
+            "SUPERVISOR_CAMPAIGN_TOOL_CALLS="
+            f"{len(campaign_calls)}"
+        )
+
+        print(
+            "DURABLE_APPLICATION_ID="
+            f"{durable_application.id}"
+        )
+
+        print(
+            "DURABLE_APPLICATION_JOB_ID="
+            f"{durable_application.job_id}"
+        )
+
+        print(
+            "DURABLE_APPLICATION_STATE="
+            f"{durable_application.state.value}"
+        )
+
+        print(
+            "SUPERVISOR_CAMPAIGN_STATE=PASS"
         )
 
         print(
@@ -417,7 +592,7 @@ were returned.
         )
 
         print(
-            "LIVE_JOBS_DELEGATE_E2E=PASS"
+            "LIVE_JOBS_CAMPAIGN_E2E=PASS"
         )
 
     finally:
