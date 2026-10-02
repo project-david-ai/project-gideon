@@ -201,6 +201,57 @@ def test_provider_evidence_without_valid_api_is_rejected():
     assert registration is None
 
 
+def test_domain_only_discovery_falls_through_to_careers_search():
+    calls = []
+
+    def page_get(
+        url,
+    ):
+        calls.append(
+            url
+        )
+
+        if not url.endswith(
+            "/careers/search"
+        ):
+            return ATSPageResponse(
+                requested_url=url,
+                final_url=url,
+                status_code=200,
+                text="<html>No ATS provider here.</html>",
+            )
+
+        return ATSPageResponse(
+            requested_url=url,
+            final_url=url,
+            status_code=200,
+            text=(
+                "https://boards.greenhouse.io/acme"
+            ),
+        )
+
+    detector = GreenhouseATSDetector(
+        page_get=page_get,
+        json_get=lambda url: valid_jobs_payload(),
+    )
+
+    registration = detector.detect(
+        EmployerTarget(
+            company_name="Acme",
+            domain="acme.example",
+        )
+    )
+
+    assert registration is not None
+
+    assert calls == [
+        "https://acme.example/careers",
+        "https://acme.example/jobs",
+        "https://acme.example/careers/search",
+    ]
+
+
+
 def test_no_provider_evidence_returns_none_without_api_guessing():
     api_calls = []
 

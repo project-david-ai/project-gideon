@@ -52,6 +52,7 @@ _GREENHOUSE_LINK_PATTERN = re.compile(
 DEFAULT_CAREER_PATHS = (
     "/careers",
     "/jobs",
+    "/careers/search",
 )
 
 

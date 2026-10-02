@@ -6,11 +6,20 @@ from typing import Any
 from project_gideon.integrations.jobs.async_ingestion import (
     ThreadedJobIngestionExecutor,
 )
+from project_gideon.integrations.jobs.ats_routing import (
+    ATSRegistrationJobAcquisitionRouter,
+)
 from project_gideon.integrations.jobs.delegation import (
     GideonJobsDelegationPort,
 )
 from project_gideon.integrations.jobs.greenhouse import (
     GreenhouseJobAcquisitionPort,
+)
+from project_gideon.integrations.jobs.greenhouse_discovery import (
+    GreenhouseATSDetector,
+)
+from project_gideon.integrations.jobs.greenhouse_registration_acquisition import (
+    GreenhouseRegistrationAcquisitionAdapter,
 )
 from project_gideon.integrations.project_david.bootstrap import (
     ProjectDavidBootstrap,
@@ -32,6 +41,9 @@ from project_gideon.models.delegation import (
 )
 from project_gideon.repositories.job_ingestion_memory import (
     InMemoryJobIngestionRepository,
+)
+from project_gideon.services.ats_discovery import (
+    ATSDiscoveryService,
 )
 from project_gideon.services.delegation import (
     JobsDelegationService,
@@ -122,8 +134,25 @@ def main() -> None:
         )
     )
 
-    acquisition = (
+    greenhouse_acquisition = (
         GreenhouseJobAcquisitionPort()
+    )
+
+    ats_discovery = ATSDiscoveryService(
+        detectors=[
+            GreenhouseATSDetector(),
+        ]
+    )
+
+    acquisition = (
+        ATSRegistrationJobAcquisitionRouter(
+            discovery=ats_discovery,
+            providers=[
+                GreenhouseRegistrationAcquisitionAdapter(
+                    greenhouse_acquisition
+                ),
+            ],
+        )
     )
 
     jobs_port = (
@@ -149,20 +178,14 @@ def main() -> None:
             JobsDelegationRequest(
                 tenant_id="gideon-live-e2e",
                 action=JobsDelegationAction.DISCOVER,
-                query=(
-                    "Discover a small sample "
-                    "of Stripe jobs."
-                ),
-                source="greenhouse",
-                parameters={
-                    "boards": [
-                        {
-                            "token": "stripe",
-                            "company": "Stripe",
-                        }
-                    ],
-                    "max_jobs_per_board": 5,
-                },
+                query="Current jobs at Stripe",
+                employers=[
+                    {
+                        "company_name": "Stripe",
+                        "domain": "stripe.com",
+                    }
+                ],
+                max_jobs_per_employer=5,
             )
         )
 
@@ -302,25 +325,19 @@ def main() -> None:
         )
 
         prompt = """
-Use the jobs_delegate capability.
+Find up to 3 current jobs at Stripe.
 
-Discover jobs from the Greenhouse source for Stripe.
-
-Use exactly these source parameters:
-{
-  "boards": [
-    {
-      "token": "stripe",
-      "company": "Stripe"
-    }
-  ],
-  "max_jobs_per_board": 3
-}
+Use the jobs_delegate capability for job discovery.
 
 The tenant_id must be "gideon-live-e2e-supervisor".
+Use a typed employer target for Stripe.
+Do not guess or supply an ATS provider, board token, or provider-specific
+source identifier. The jobs faction must resolve Stripe's recruiting source.
 
-Do not use web search or browser automation for this request.
-After the tool completes, briefly tell me how many canonical jobs
+Do not use research_delegate, web search, or browser automation for this
+request.
+
+After the jobs tool completes, briefly tell me how many canonical jobs
 were returned.
 """.strip()
 
