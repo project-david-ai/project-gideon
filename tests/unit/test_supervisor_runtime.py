@@ -89,6 +89,36 @@ def test_composition_root_builds_ready_supervisor_session(
     )
 
 
+def test_composition_root_rejects_missing_provider_api_key(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        runtime_module,
+        "resolve_provider_api_key",
+        lambda: None,
+    )
+
+    bindings = ProjectDavidRuntimeBindings(
+        assistant_name="gideon-supervisor",
+        assistant_id="assistant-1",
+        meta_data={
+            "ready": True,
+        },
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="requires a provider API key",
+    ):
+        runtime_module.build_supervisor_session_service(
+            client=SimpleNamespace(),
+            client_factory=FakeFactory(),
+            config=make_config(),
+            bindings=bindings,
+        )
+
+
+
 def test_composition_root_rejects_non_ready_bindings():
     bindings = ProjectDavidRuntimeBindings(
         assistant_name="gideon-supervisor",

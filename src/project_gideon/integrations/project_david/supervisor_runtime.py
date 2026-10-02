@@ -67,10 +67,19 @@ def build_supervisor_session_service(
             "Project David bindings."
         )
 
+    provider_api_key = resolve_provider_api_key()
+
+    if not provider_api_key:
+        raise RuntimeError(
+            "Gideon supervisor inference requires a provider API key. "
+            "Set GIDEON_PROVIDER_API_KEY or a supported provider-specific "
+            "credential."
+        )
+
     research_port = ProjectDavidResearchDelegationPort(
         client_factory=client_factory.create_research_client,
         model=config.assistant_model,
-        provider_api_key=resolve_provider_api_key(),
+        provider_api_key=provider_api_key,
     )
 
     research_port.bind_presentation(
@@ -107,6 +116,6 @@ def build_supervisor_session_service(
         assistant_id=bindings.assistant_id,
         model=config.assistant_model,
         dispatcher=dispatcher,
-        provider_api_key=resolve_provider_api_key(),
+        provider_api_key=provider_api_key,
         presentation_sink=presentation_sink,
     )
