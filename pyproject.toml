@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Agentic job-search and application workflow built on Project David."
 requires-python = ">=3.10"
 dependencies = [
-    "projectdavid==1.112.0",
+    "projectdavid[embeddings]==1.113.1",
     "pydantic>=2.7,<3",
 ]
 
