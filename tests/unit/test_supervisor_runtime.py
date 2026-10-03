@@ -269,3 +269,46 @@ def test_composition_root_does_not_fake_jobs_implementation(
     assert result._dispatcher.names() == (
         "research_delegate",
     )
+
+
+
+def test_composition_root_registers_job_lookup_when_reader_supplied(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        runtime_module,
+        "resolve_provider_api_key",
+        lambda: "provider-key",
+    )
+
+    bindings = ProjectDavidRuntimeBindings(
+        assistant_name="gideon-supervisor",
+        assistant_id="assistant-1",
+        meta_data={
+            "ready": True,
+        },
+    )
+
+    class FakeJobReader:
+        async def get(
+            self,
+            *,
+            tenant_id,
+            job_id,
+        ):
+            raise AssertionError(
+                "Composition test must not execute repository reads."
+            )
+
+    result = runtime_module.build_supervisor_session_service(
+        client=SimpleNamespace(),
+        client_factory=FakeFactory(),
+        config=make_config(),
+        bindings=bindings,
+        job_reader=FakeJobReader(),
+    )
+
+    assert result._dispatcher.names() == (
+        "job_lookup",
+        "research_delegate",
+    )

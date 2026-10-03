@@ -60,6 +60,7 @@ def test_supervisor_advertises_domain_and_cross_faction_tools():
     assert names == [
         "research_delegate",
         "jobs_delegate",
+        "job_lookup",
         "application_campaign",
     ]
 
@@ -129,6 +130,10 @@ def test_supervisor_reconciles_native_file_search_tool_resources() -> None:
 
     _, updates = client.updates[0]
 
+    assert {
+        "type": "file_search",
+    } in updates["tools"]
+
     assert updates["tool_resources"] == {
         "file_search": {
             "vector_store_ids": [
@@ -175,3 +180,7 @@ def test_supervisor_without_vector_store_does_not_invent_tool_resources() -> Non
 
     assert client.created is not None
     assert "tool_resources" not in client.created
+    assert not any(
+        tool.get("type") == "file_search"
+        for tool in client.created["tools"]
+    )

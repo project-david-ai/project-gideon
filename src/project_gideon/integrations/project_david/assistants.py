@@ -8,6 +8,9 @@ from project_gideon.integrations.project_david.consumer_tools.application_campai
 from project_gideon.integrations.project_david.consumer_tools.jobs import (
     build_jobs_delegate_tool,
 )
+from project_gideon.integrations.project_david.consumer_tools.job_lookup import (
+    build_job_lookup_tool,
+)
 from project_gideon.integrations.project_david.consumer_tools.research import (
     build_research_delegate_tool,
 )
@@ -35,6 +38,16 @@ you remain the career supervisor.
 When job discovery, ingestion, or refresh of canonical job-domain state is
 required, use jobs_delegate. The jobs faction owns job acquisition and
 canonical job reconciliation; you remain the career supervisor.
+
+After jobs_delegate returns canonical job identifiers, use job_lookup when
+you need authoritative job details for fit analysis or application
+preparation. Do not infer job requirements from an identifier alone.
+
+When evaluating candidate fit or preparing an application, use native
+file_search to retrieve candidate CV, skills, and experience evidence from
+the configured candidate knowledge store. Treat retrieved candidate records
+as the source of truth and do not invent candidate facts that are absent from
+that evidence.
 
 When the user wants to shortlist a canonical job or begin preparing an
 existing shortlisted application, use application_campaign. Gideon's
@@ -104,8 +117,19 @@ class GideonAssistantRegistry:
         tools = [
             build_research_delegate_tool(),
             build_jobs_delegate_tool(),
+            build_job_lookup_tool(),
             build_application_campaign_tool(),
         ]
+
+        # Project David native tool declaration. tool_resources selects the
+        # canonical candidate vector store; this declaration exposes the
+        # native file_search capability to the model.
+        if file_search_vector_store_id:
+            tools.append(
+                {
+                    "type": "file_search",
+                }
+            )
 
         updates = {
             "name": name,

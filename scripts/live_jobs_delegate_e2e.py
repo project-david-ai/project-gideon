@@ -236,6 +236,10 @@ def main() -> None:
         "gideon-live-e2e-supervisor"
     )
 
+    canonical_cv_file_id = (
+        "vsf_10e8b30a-7569-42e1-8cf7-cd08baae0841"
+    )
+
     candidate = CandidateProfile(
         id="candidate-live-e2e",
         tenant_id=campaign_tenant_id,
@@ -244,6 +248,11 @@ def main() -> None:
             last_name="Candidate",
             email="live-candidate@example.com",
         ),
+        default_cv_file_id=canonical_cv_file_id,
+        meta_data={
+            "live_e2e": True,
+            "candidate_knowledge": "canonical_cv",
+        },
     )
 
     import asyncio
@@ -400,6 +409,8 @@ def main() -> None:
             config=config,
         )
 
+        presentation_events = []
+
         supervisor = (
             build_supervisor_session_service(
                 client=client,
@@ -407,32 +418,57 @@ def main() -> None:
                 config=config,
                 bindings=bindings,
                 jobs_service=jobs_service,
+                job_reader=canonical_jobs,
                 campaign_service=campaign_service,
+                presentation_sink=presentation_events.append,
             )
         )
 
         prompt = """
-Find up to 3 current jobs at Stripe.
-
-Use jobs_delegate for discovery.
+Find current software-engineering jobs at Stripe that could be
+appropriate for candidate_id "candidate-live-e2e".
 
 The tenant_id must be "gideon-live-e2e-supervisor".
-Use a typed employer target for Stripe.
-Do not guess or supply an ATS provider, board token, or provider-specific
-source identifier. The jobs faction must resolve Stripe's recruiting source.
 
-After jobs_delegate returns canonical job IDs:
+This is a bounded workflow evaluation.
 
-1. Select the first canonical job ID returned.
-2. Use application_campaign with action "shortlist".
-3. Use candidate_id "candidate-live-e2e".
-4. Use application_campaign again with action "start_preparation" using
+Use jobs_delegate for real job discovery with a typed employer target for
+Stripe and max_jobs_per_employer=3. Do not guess or supply an ATS provider,
+board token, or provider-specific source identifier. The jobs faction must
+resolve Stripe's recruiting source.
+
+After the first successful jobs_delegate call, do not call jobs_delegate
+again. The canonical job IDs returned by that successful call are the complete
+evaluation set for this run.
+
+Use native file_search to retrieve evidence from the candidate's configured
+CV. Do not invent or assume candidate skills, experience, seniority, or other
+candidate facts.
+
+Use job_lookup to inspect the authoritative canonical records for at most the
+first 3 canonical job IDs returned by jobs_delegate. Do not inspect or discover
+additional jobs.
+
+Compare those jobs against the retrieved CV evidence and select the
+best-supported available match from that bounded set. Do not select from an
+identifier alone and do not simply choose the first result.
+
+Then:
+1. Use application_campaign with action "shortlist" for the selected
+   canonical job and candidate_id "candidate-live-e2e".
+2. Use application_campaign again with action "start_preparation" using
    the application ID returned by the shortlist operation.
 
 Do not use research_delegate, web search, or browser automation.
 
-After both campaign operations complete, report the canonical job ID,
-application ID, and final authoritative application state.
+After both campaign operations complete, briefly report:
+- the selected canonical job ID;
+- the application ID;
+- the final authoritative application state; and
+- the retrieved candidate evidence and canonical job evidence that supported
+  the selection.
+
+Do not claim evidence that was not returned by the tools.
 """.strip()
 
         turn = supervisor.run(
@@ -471,6 +507,31 @@ application ID, and final authoritative application state.
                 "but not executed."
             )
 
+        job_lookup_calls = [
+            tool_call
+            for tool_call
+            in turn.tool_calls
+            if (
+                tool_call.tool_name
+                == "job_lookup"
+            )
+        ]
+
+        if not job_lookup_calls:
+            raise RuntimeError(
+                "Supervisor did not invoke job_lookup for "
+                "canonical job evidence."
+            )
+
+        if not any(
+            tool_call.executed
+            for tool_call
+            in job_lookup_calls
+        ):
+            raise RuntimeError(
+                "job_lookup was requested but not executed."
+            )
+
         campaign_calls = [
             tool_call
             for tool_call
@@ -495,6 +556,34 @@ application ID, and final authoritative application state.
             raise RuntimeError(
                 "One or more application_campaign "
                 "calls were not executed."
+            )
+
+        completed_actions = (
+            client.actions.get_actions_by_status(
+                turn.run_id,
+                status="completed",
+            )
+        )
+
+        native_file_search_actions = [
+            action
+            for action in completed_actions
+            if action.get("tool_name") == "file_search"
+        ]
+
+        if not native_file_search_actions:
+            completed_tools = sorted(
+                {
+                    action.get("tool_name")
+                    for action in completed_actions
+                    if action.get("tool_name")
+                }
+            )
+
+            raise RuntimeError(
+                "No completed native file_search Action was "
+                "persisted for the supervisor run. "
+                f"completed_tools={completed_tools}"
             )
 
         if not turn.content.strip():
@@ -534,6 +623,27 @@ application ID, and final authoritative application state.
                 "Durable application candidate mismatch."
             )
 
+        canonical_supervisor_jobs = asyncio.run(
+            repository.list_for_tenant(
+                campaign_tenant_id
+            )
+        )
+
+        canonical_supervisor_job_ids = {
+            job.id
+            for job in canonical_supervisor_jobs
+        }
+
+        if (
+            durable_application.job_id
+            not in canonical_supervisor_job_ids
+        ):
+            raise RuntimeError(
+                "Selected application job is not present in "
+                "the supervisor tenant's authoritative "
+                "canonical job repository."
+            )
+
         print(
             "SUPERVISOR_JOBS_DELEGATE=PASS"
         )
@@ -541,6 +651,25 @@ application ID, and final authoritative application state.
         print(
             "SUPERVISOR_JOBS_TOOL_CALLS="
             f"{len(jobs_calls)}"
+        )
+
+        print(
+            "SUPERVISOR_JOB_LOOKUP_TOOL_CALLS="
+            f"{len(job_lookup_calls)}"
+        )
+
+        print(
+            "NATIVE_FILE_SEARCH_ACTIONS="
+            f"{len(native_file_search_actions)}"
+        )
+
+        print(
+            "CANONICAL_CV_FILE_ID="
+            f"{canonical_cv_file_id}"
+        )
+
+        print(
+            "SEMANTIC_CV_JOB_REASONING=PASS"
         )
 
         print(

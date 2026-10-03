@@ -20,6 +20,11 @@ from project_gideon.integrations.project_david.consumer_tools.jobs import (
     JOBS_DELEGATE_TOOL_NAME,
     create_jobs_delegate_handler,
 )
+from project_gideon.integrations.project_david.consumer_tools.job_lookup import (
+    JOB_LOOKUP_TOOL_NAME,
+    CanonicalJobReader,
+    create_job_lookup_handler,
+)
 from project_gideon.integrations.project_david.consumer_tools.research import (
     RESEARCH_DELEGATE_TOOL_NAME,
     create_research_delegate_handler,
@@ -53,6 +58,7 @@ def build_supervisor_session_service(
     config: ProjectDavidConfig,
     bindings: ProjectDavidRuntimeBindings,
     jobs_service: JobsDelegationService | None = None,
+    job_reader: CanonicalJobReader | None = None,
     campaign_service: ApplicationCampaignService | None = None,
     presentation_sink: Callable[
         [GideonPresentationEvent],
@@ -116,6 +122,14 @@ def build_supervisor_session_service(
             JOBS_DELEGATE_TOOL_NAME,
             create_jobs_delegate_handler(
                 jobs_service
+            ),
+        )
+
+    if job_reader is not None:
+        dispatcher.register(
+            JOB_LOOKUP_TOOL_NAME,
+            create_job_lookup_handler(
+                job_reader
             ),
         )
 
