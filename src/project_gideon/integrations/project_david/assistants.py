@@ -83,6 +83,7 @@ class GideonAssistantRegistry:
         *,
         name: str,
         model: str,
+        file_search_vector_store_id: str | None = None,
     ) -> Any:
         matches = [
             assistant
@@ -112,6 +113,15 @@ class GideonAssistantRegistry:
             "instructions": GIDEON_SUPERVISOR_INSTRUCTIONS,
             "tools": tools,
         }
+
+        if file_search_vector_store_id:
+            updates["tool_resources"] = {
+                "file_search": {
+                    "vector_store_ids": [
+                        file_search_vector_store_id,
+                    ],
+                },
+            }
 
         if matches:
             assistant = matches[0]

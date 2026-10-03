@@ -46,6 +46,10 @@ class ProjectDavidBootstrap:
     def reconcile(
         self,
     ) -> ProjectDavidRuntimeBindings:
+        vector_store_id = (
+            self._client.vectors.get_or_create_file_search_store()
+        )
+
         assistant_registry = GideonAssistantRegistry(
             self._client.assistants
         )
@@ -53,6 +57,7 @@ class ProjectDavidBootstrap:
         assistant = assistant_registry.ensure_supervisor(
             name=self._config.assistant_name,
             model=self._config.assistant_model,
+            file_search_vector_store_id=vector_store_id,
         )
 
         mcp_registry = GideonMcpRegistry(
@@ -94,6 +99,7 @@ class ProjectDavidBootstrap:
             mcp_server_id=server.id,
             meta_data={
                 "ready": True,
+                "file_search_vector_store_id": vector_store_id,
                 "playwright_tool_names": selected.names(),
                 "playwright_attached_count": len(
                     attached_playwright

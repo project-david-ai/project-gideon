@@ -226,8 +226,19 @@ class FakeMcpClient:
         ]
 
 
+class FakeVectors:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.vector_store_id = "vect-test-file-search"
+
+    def get_or_create_file_search_store(self) -> str:
+        self.calls += 1
+        return self.vector_store_id
+
+
 class FakeEntity:
     def __init__(self):
+        self.vectors = FakeVectors()
         self.assistants = FakeAssistantsClient()
         self.mcp = FakeMcpClient()
 
