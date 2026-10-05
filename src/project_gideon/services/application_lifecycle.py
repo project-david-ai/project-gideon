@@ -108,6 +108,67 @@ class ApplicationLifecycleService:
     ) -> bool:
         return target in _ALLOWED_TRANSITIONS[current]
 
+    async def claim_transition(
+        self,
+        *,
+        application_id: str,
+        tenant_id: str,
+        target: ApplicationState,
+    ) -> JobApplication:
+        """
+        Atomically claim a lifecycle transition.
+
+        Intended for transitions which guard irreversible external
+        side effects. Exactly one concurrent caller may move the
+        application away from the observed source state.
+        """
+
+        application = await self._repository.get(
+            application_id,
+            tenant_id,
+        )
+
+        if not self.can_transition(
+            application.state,
+            target,
+        ):
+            raise InvalidApplicationTransition(
+                f"Illegal application transition: "
+                f"{application.state.value} -> {target.value}"
+            )
+
+        now = datetime.now(timezone.utc)
+
+        update = {
+            "state": target,
+            "updated_at": now,
+        }
+
+        if target is ApplicationState.SUBMITTED:
+            update["submitted_at"] = now
+
+        candidate = application.model_copy(
+            update=update,
+        )
+
+        claimed = await self._repository.claim_state(
+            candidate,
+            expected_state=application.state,
+        )
+
+        if claimed is None:
+            current = await self._repository.get(
+                application_id,
+                tenant_id,
+            )
+
+            raise InvalidApplicationTransition(
+                "Application state changed concurrently: "
+                f"expected {application.state.value}, "
+                f"found {current.state.value}."
+            )
+
+        return claimed
     async def transition(
         self,
         *,

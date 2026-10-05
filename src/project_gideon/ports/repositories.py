@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from project_gideon.models.application import ApplicationState
+
 from project_gideon.models.approval import ApprovalGrant
 
 from typing import List, Protocol
@@ -68,6 +70,19 @@ class ApplicationRepository(Protocol):
     ) -> JobApplication:
         ...
 
+    async def claim_state(
+        self,
+        application: JobApplication,
+        *,
+        expected_state: ApplicationState,
+    ) -> JobApplication | None:
+        """
+        Atomically persist application only when the stored
+        application is still in expected_state.
+
+        None means another caller won the state claim.
+        """
+        ...
     async def list_for_tenant(
         self,
         tenant_id: str,

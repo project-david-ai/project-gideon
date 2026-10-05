@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from project_gideon.models.application import ApplicationState
+
 from project_gideon.models.approval import ApprovalGrant
 
 from typing import Dict, Generic, List, Tuple, TypeVar
@@ -140,6 +142,39 @@ class InMemoryApplicationRepository(
             application_id,
         )
 
+    async def claim_state(
+        self,
+        application: JobApplication,
+        *,
+        expected_state: ApplicationState,
+    ) -> JobApplication | None:
+        import asyncio
+
+        lock = getattr(
+            self,
+            "_state_claim_lock",
+            None,
+        )
+
+        if lock is None:
+            lock = asyncio.Lock()
+            self._state_claim_lock = lock
+
+        async with lock:
+            current = await self.get(
+                application.id,
+                application.tenant_id,
+            )
+
+            if (
+                current.state
+                is not expected_state
+            ):
+                return None
+
+            return await self.save(
+                application
+            )
     async def list_for_tenant(
         self,
         tenant_id: str,
