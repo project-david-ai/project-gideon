@@ -112,12 +112,12 @@ async def test_lifecycle_atomic_transition_has_single_winner():
         lifecycle.claim_transition(
             application_id=application.id,
             tenant_id=application.tenant_id,
-            target=ApplicationState.SUBMITTED,
+            target=ApplicationState.SUBMITTING,
         ),
         lifecycle.claim_transition(
             application_id=application.id,
             tenant_id=application.tenant_id,
-            target=ApplicationState.SUBMITTED,
+            target=ApplicationState.SUBMITTING,
         ),
         return_exceptions=True,
     )
@@ -144,7 +144,7 @@ async def test_lifecycle_atomic_transition_has_single_winner():
 
     assert (
         successes[0].state
-        is ApplicationState.SUBMITTED
+        is ApplicationState.SUBMITTING
     )
 
     assert len(failures) == 1
@@ -161,10 +161,10 @@ async def test_lifecycle_atomic_transition_has_single_winner():
 
     assert (
         stored.state
-        is ApplicationState.SUBMITTED
+        is ApplicationState.SUBMITTING
     )
 
-    assert stored.submitted_at is not None
+    assert stored.submitted_at is None
 
 
 @pytest.mark.asyncio

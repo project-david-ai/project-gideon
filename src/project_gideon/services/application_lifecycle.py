@@ -61,6 +61,13 @@ _ALLOWED_TRANSITIONS: Dict[
     ),
     ApplicationState.APPROVED: frozenset(
         {
+            ApplicationState.SUBMITTING,
+            ApplicationState.FAILED,
+            ApplicationState.CLOSED,
+        }
+    ),
+    ApplicationState.SUBMITTING: frozenset(
+        {
             ApplicationState.SUBMITTED,
             ApplicationState.FAILED,
             ApplicationState.CLOSED,

@@ -15,6 +15,7 @@ class ApplicationState(str, Enum):
     NEEDS_INPUT = "needs_input"
     READY_FOR_REVIEW = "ready_for_review"
     APPROVED = "approved"
+    SUBMITTING = "submitting"
     SUBMITTED = "submitted"
     FAILED = "failed"
     WITHDRAWN = "withdrawn"

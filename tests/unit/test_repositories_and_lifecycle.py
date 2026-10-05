@@ -98,27 +98,70 @@ async def test_illegal_application_transition_is_rejected():
 
 
 @pytest.mark.asyncio
-async def test_submission_records_timestamp():
+async def test_approved_application_must_pass_through_submitting():
+    from project_gideon.models.application import (
+        ApplicationState,
+        JobApplication,
+    )
+    from project_gideon.repositories.memory import (
+        InMemoryApplicationRepository,
+    )
+    from project_gideon.services.application_lifecycle import (
+        ApplicationLifecycleService,
+        InvalidApplicationTransition,
+    )
+
     repository = InMemoryApplicationRepository()
 
     application = JobApplication(
-        id="application_1",
-        tenant_id="tenant_1",
-        job_id="job_1",
-        candidate_id="candidate_1",
+        id="application_submission_lifecycle",
+        tenant_id="tenant_submission_lifecycle",
+        job_id="job_submission_lifecycle",
+        candidate_id="candidate_submission_lifecycle",
         state=ApplicationState.APPROVED,
     )
 
-    await repository.save(application)
+    await repository.save(
+        application
+    )
 
-    lifecycle = ApplicationLifecycleService(repository)
+    lifecycle = ApplicationLifecycleService(
+        repository
+    )
 
-    submitted = await lifecycle.transition(
+    with pytest.raises(
+        InvalidApplicationTransition,
+        match="approved -> submitted",
+    ):
+        await lifecycle.transition(
+            application_id=application.id,
+            tenant_id=application.tenant_id,
+            target=ApplicationState.SUBMITTED,
+        )
+
+    submitting = await lifecycle.claim_transition(
+        application_id=application.id,
+        tenant_id=application.tenant_id,
+        target=ApplicationState.SUBMITTING,
+    )
+
+    assert (
+        submitting.state
+        is ApplicationState.SUBMITTING
+    )
+
+    assert submitting.submitted_at is None
+
+    submitted = await lifecycle.claim_transition(
         application_id=application.id,
         tenant_id=application.tenant_id,
         target=ApplicationState.SUBMITTED,
     )
 
-    assert submitted.state is ApplicationState.SUBMITTED
+    assert (
+        submitted.state
+        is ApplicationState.SUBMITTED
+    )
+
     assert submitted.submitted_at is not None
     assert submitted.submitted_at.tzinfo is not None
