@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from project_gideon.models.approval import ApprovalGrant
+
 from typing import Dict, Generic, List, Tuple, TypeVar
 
 from project_gideon.models import (
@@ -168,6 +170,54 @@ class InMemoryApprovalRepository(
             approval_id,
         )
 
+    async def save_grant(
+        self,
+        grant: ApprovalGrant,
+    ) -> ApprovalGrant:
+        store = getattr(
+            self,
+            "_approval_grants",
+            None,
+        )
+
+        if store is None:
+            store = {}
+            self._approval_grants = store
+
+        store[
+            (
+                grant.tenant_id,
+                grant.id,
+            )
+        ] = grant
+
+        return grant
+
+    async def get_grant(
+        self,
+        grant_id: str,
+        tenant_id: str,
+    ) -> ApprovalGrant:
+        store = getattr(
+            self,
+            "_approval_grants",
+            None,
+        )
+
+        key = (
+            tenant_id,
+            grant_id,
+        )
+
+        if (
+            store is None
+            or key not in store
+        ):
+            raise KeyError(
+                f"Approval grant not found: {grant_id}"
+            )
+
+        return store[key]
     async def list_for_tenant(
         self,
         tenant_id: str,

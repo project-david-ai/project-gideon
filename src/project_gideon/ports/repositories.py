@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from project_gideon.models.approval import ApprovalGrant
+
 from typing import List, Protocol
 
 from project_gideon.models import (
@@ -87,6 +89,18 @@ class ApprovalRepository(Protocol):
     ) -> ApprovalRequest:
         ...
 
+    async def save_grant(
+        self,
+        grant: ApprovalGrant,
+    ) -> ApprovalGrant:
+        ...
+
+    async def get_grant(
+        self,
+        grant_id: str,
+        tenant_id: str,
+    ) -> ApprovalGrant:
+        ...
     async def list_for_tenant(
         self,
         tenant_id: str,

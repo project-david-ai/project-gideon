@@ -94,7 +94,7 @@ class ApprovalService:
 
         lifetime = ttl or self._default_ttl
 
-        return ApprovalGrant(
+        grant = ApprovalGrant(
             id=f"grant_{uuid4().hex}",
             approval_request_id=request.id,
             tenant_id=request.tenant_id,
@@ -102,6 +102,10 @@ class ApprovalService:
             resource_id=request.resource_id,
             issued_at=now,
             expires_at=now + lifetime,
+        )
+
+        return await self._repository.save_grant(
+            grant
         )
 
     async def reject(
@@ -129,6 +133,64 @@ class ApprovalService:
 
         return await self._repository.save(rejected)
 
+    async def consume(
+        self,
+        *,
+        grant_id: str,
+        tenant_id: str,
+        action: ApprovalAction,
+        resource_id: str,
+        now: Optional[datetime] = None,
+    ) -> ApprovalGrant:
+        """
+        Reload, validate, and durably consume a single-use grant.
+        """
+
+        grant = await self._repository.get_grant(
+            grant_id,
+            tenant_id,
+        )
+
+        self.validate_grant(
+            grant,
+            tenant_id=tenant_id,
+            action=action,
+            resource_id=resource_id,
+            now=now,
+        )
+
+        request = await self._repository.get(
+            grant.approval_request_id,
+            tenant_id,
+        )
+
+        if request.state is not ApprovalState.APPROVED:
+            raise ApprovalGrantInvalid(
+                "Approval request is not in approved state."
+            )
+
+        consumed_grant = self.consume_grant(
+            grant,
+            now=now,
+        )
+
+        consumed_request = request.model_copy(
+            update={
+                "state": ApprovalState.CONSUMED,
+            }
+        )
+
+        persisted_grant = (
+            await self._repository.save_grant(
+                consumed_grant
+            )
+        )
+
+        await self._repository.save(
+            consumed_request
+        )
+
+        return persisted_grant
     @staticmethod
     def validate_grant(
         grant: ApprovalGrant,

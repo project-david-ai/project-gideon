@@ -224,3 +224,208 @@ def test_submission_guard_accepts_correct_scope():
         application=application,
         grant=grant,
     )
+
+
+@pytest.mark.asyncio
+async def test_approved_grant_is_persisted():
+    from project_gideon.models.approval import (
+        ApprovalAction,
+    )
+    from project_gideon.repositories.memory import (
+        InMemoryApprovalRepository,
+    )
+    from project_gideon.services.approval import (
+        ApprovalService,
+    )
+
+    repository = InMemoryApprovalRepository()
+    service = ApprovalService(repository)
+
+    request = await service.request(
+        tenant_id="tenant_1",
+        action=ApprovalAction.SUBMIT_APPLICATION,
+        resource_id="application_1",
+        summary="Submit application.",
+    )
+
+    grant = await service.approve(
+        approval_id=request.id,
+        tenant_id=request.tenant_id,
+    )
+
+    persisted = await repository.get_grant(
+        grant.id,
+        request.tenant_id,
+    )
+
+    assert persisted == grant
+    assert persisted.is_consumed is False
+
+
+@pytest.mark.asyncio
+async def test_persisted_grant_can_be_consumed_exactly_once():
+    from project_gideon.models.approval import (
+        ApprovalAction,
+        ApprovalState,
+    )
+    from project_gideon.repositories.memory import (
+        InMemoryApprovalRepository,
+    )
+    from project_gideon.services.approval import (
+        ApprovalGrantInvalid,
+        ApprovalService,
+    )
+
+    repository = InMemoryApprovalRepository()
+    service = ApprovalService(repository)
+
+    request = await service.request(
+        tenant_id="tenant_1",
+        action=ApprovalAction.SUBMIT_APPLICATION,
+        resource_id="application_1",
+    )
+
+    grant = await service.approve(
+        approval_id=request.id,
+        tenant_id=request.tenant_id,
+    )
+
+    consumed = await service.consume(
+        grant_id=grant.id,
+        tenant_id=request.tenant_id,
+        action=ApprovalAction.SUBMIT_APPLICATION,
+        resource_id="application_1",
+    )
+
+    assert consumed.is_consumed is True
+
+    persisted_grant = await repository.get_grant(
+        grant.id,
+        request.tenant_id,
+    )
+
+    assert persisted_grant.is_consumed is True
+
+    persisted_request = await repository.get(
+        request.id,
+        request.tenant_id,
+    )
+
+    assert (
+        persisted_request.state
+        is ApprovalState.CONSUMED
+    )
+
+    with pytest.raises(
+        ApprovalGrantInvalid,
+        match="consumed",
+    ):
+        await service.consume(
+            grant_id=grant.id,
+            tenant_id=request.tenant_id,
+            action=ApprovalAction.SUBMIT_APPLICATION,
+            resource_id="application_1",
+        )
+
+
+@pytest.mark.asyncio
+async def test_persisted_grant_cannot_cross_application_boundary():
+    from project_gideon.models.approval import (
+        ApprovalAction,
+    )
+    from project_gideon.repositories.memory import (
+        InMemoryApprovalRepository,
+    )
+    from project_gideon.services.approval import (
+        ApprovalGrantInvalid,
+        ApprovalService,
+    )
+
+    repository = InMemoryApprovalRepository()
+    service = ApprovalService(repository)
+
+    request = await service.request(
+        tenant_id="tenant_1",
+        action=ApprovalAction.SUBMIT_APPLICATION,
+        resource_id="application_1",
+    )
+
+    grant = await service.approve(
+        approval_id=request.id,
+        tenant_id=request.tenant_id,
+    )
+
+    with pytest.raises(
+        ApprovalGrantInvalid,
+        match="resource mismatch",
+    ):
+        await service.consume(
+            grant_id=grant.id,
+            tenant_id=request.tenant_id,
+            action=ApprovalAction.SUBMIT_APPLICATION,
+            resource_id="application_OTHER",
+        )
+
+    persisted = await repository.get_grant(
+        grant.id,
+        request.tenant_id,
+    )
+
+    assert persisted.is_consumed is False
+
+
+@pytest.mark.asyncio
+async def test_nonapproved_parent_request_cannot_consume_grant():
+    from project_gideon.models.approval import (
+        ApprovalAction,
+        ApprovalState,
+    )
+    from project_gideon.repositories.memory import (
+        InMemoryApprovalRepository,
+    )
+    from project_gideon.services.approval import (
+        ApprovalGrantInvalid,
+        ApprovalService,
+    )
+
+    repository = InMemoryApprovalRepository()
+    service = ApprovalService(repository)
+
+    request = await service.request(
+        tenant_id="tenant_1",
+        action=ApprovalAction.SUBMIT_APPLICATION,
+        resource_id="application_1",
+    )
+
+    grant = await service.approve(
+        approval_id=request.id,
+        tenant_id=request.tenant_id,
+    )
+
+    tampered_request = request.model_copy(
+        update={
+            "state": ApprovalState.REJECTED,
+        }
+    )
+
+    await repository.save(
+        tampered_request
+    )
+
+    with pytest.raises(
+        ApprovalGrantInvalid,
+        match="not in approved state",
+    ):
+        await service.consume(
+            grant_id=grant.id,
+            tenant_id=request.tenant_id,
+            action=ApprovalAction.SUBMIT_APPLICATION,
+            resource_id="application_1",
+        )
+
+    persisted = await repository.get_grant(
+        grant.id,
+        request.tenant_id,
+    )
+
+    assert persisted.is_consumed is False
