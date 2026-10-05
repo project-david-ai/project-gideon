@@ -51,6 +51,7 @@ class ApprovalService:
         requested_by_run_id: Optional[str] = None,
         requested_by_assistant_id: Optional[str] = None,
         summary: Optional[str] = None,
+        meta_data: Optional[dict[str, object]] = None,
     ) -> ApprovalRequest:
         request = ApprovalRequest(
             id=f"approval_{uuid4().hex}",
@@ -60,6 +61,7 @@ class ApprovalService:
             requested_by_run_id=requested_by_run_id,
             requested_by_assistant_id=requested_by_assistant_id,
             summary=summary,
+            meta_data=dict(meta_data or {}),
         )
 
         return await self._repository.save(request)
@@ -102,6 +104,7 @@ class ApprovalService:
             resource_id=request.resource_id,
             issued_at=now,
             expires_at=now + lifetime,
+            meta_data=dict(request.meta_data),
         )
 
         return await self._repository.save_grant(

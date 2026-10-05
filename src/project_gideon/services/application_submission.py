@@ -20,6 +20,11 @@ from project_gideon.ports import (
 from project_gideon.services.approval import (
     ApprovalService,
 )
+from project_gideon.services.application_review import (
+    APPLICATION_REVIEW_FINGERPRINT_KEY,
+    application_review_fingerprint,
+    review_binding_matches,
+)
 from project_gideon.services.application_lifecycle import (
     ApplicationLifecycleService,
     InvalidApplicationTransition,
@@ -176,6 +181,12 @@ class ApplicationSubmissionService:
             application
         )
 
+        review_fingerprint = (
+            application_review_fingerprint(
+                application
+            )
+        )
+
         pending = [
             approval
             for approval
@@ -189,6 +200,10 @@ class ApplicationSubmissionService:
                 == application.id
                 and approval.state
                 is ApprovalState.PENDING
+                and approval.meta_data.get(
+                    APPLICATION_REVIEW_FINGERPRINT_KEY
+                )
+                == review_fingerprint
             )
         ]
 
@@ -210,6 +225,10 @@ class ApplicationSubmissionService:
                 requested_by_assistant_id
             ),
             summary=summary,
+            meta_data={
+                APPLICATION_REVIEW_FINGERPRINT_KEY:
+                    review_fingerprint,
+            },
         )
 
     async def approve_submission(
@@ -247,6 +266,15 @@ class ApplicationSubmissionService:
             application
         )
 
+        if not review_binding_matches(
+            application=application,
+            meta_data=request.meta_data,
+        ):
+            raise SubmissionApprovalInvalid(
+                "Approval request is stale because the "
+                "reviewed application content changed."
+            )
+
         grant = await self._approval_service.approve(
             approval_id=request.id,
             tenant_id=tenant_id,
@@ -268,6 +296,30 @@ class ApplicationSubmissionService:
             raise SubmissionApprovalInvalid(
                 "Application approval state could not be claimed."
             ) from exc
+
+        if not review_binding_matches(
+            application=approved,
+            meta_data=grant.meta_data,
+        ):
+            await self._approval_service.consume(
+                grant_id=grant.id,
+                tenant_id=tenant_id,
+                action=(
+                    ApprovalAction.SUBMIT_APPLICATION
+                ),
+                resource_id=approved.id,
+            )
+
+            await self._lifecycle.claim_transition(
+                application_id=approved.id,
+                tenant_id=tenant_id,
+                target=ApplicationState.FAILED,
+            )
+
+            raise SubmissionApprovalInvalid(
+                "Application changed while approval "
+                "authority was being established."
+            )
 
         persisted_request = await self._approvals.get(
             request.id,
@@ -355,6 +407,15 @@ class ApplicationSubmissionService:
             tenant_id,
         )
 
+        if not review_binding_matches(
+            application=application,
+            meta_data=grant.meta_data,
+        ):
+            raise SubmissionApprovalInvalid(
+                "Approval grant is stale because the "
+                "reviewed application content changed."
+            )
+
         SubmissionGuard.authorize(
             application=application,
             grant=grant,
@@ -388,6 +449,22 @@ class ApplicationSubmissionService:
                 "application state claim was lost. "
                 "Automatic retry is forbidden."
             ) from exc
+
+        if not review_binding_matches(
+            application=submitting,
+            meta_data=consumed_grant.meta_data,
+        ):
+            await self._lifecycle.claim_transition(
+                application_id=submitting.id,
+                tenant_id=tenant_id,
+                target=ApplicationState.FAILED,
+            )
+
+            raise SubmissionApprovalInvalid(
+                "Application changed after authority "
+                "was claimed but before submission. "
+                "No external submission was attempted."
+            )
 
         try:
             evidence = await self._actuator.submit(

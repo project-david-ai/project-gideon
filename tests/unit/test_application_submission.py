@@ -19,9 +19,14 @@ from project_gideon.repositories.memory import (
 from project_gideon.services.approval import (
     ApprovalService,
 )
+from project_gideon.services.application_review import (
+    APPLICATION_REVIEW_FINGERPRINT_KEY,
+    application_review_fingerprint,
+)
 from project_gideon.services.application_submission import (
     ApplicationSubmissionError,
     ApplicationSubmissionService,
+    SubmissionApprovalInvalid,
     SubmissionConfirmationMissing,
     SubmissionEvidence,
     SubmissionNotReady,
@@ -538,10 +543,22 @@ async def test_two_independent_valid_grants_still_produce_one_actuator_call():
         approvals
     )
 
+    review_fingerprint = (
+        application_review_fingerprint(
+            application
+        )
+    )
+
+    review_meta = {
+        APPLICATION_REVIEW_FINGERPRINT_KEY:
+            review_fingerprint,
+    }
+
     request_a = await authority.request(
         tenant_id=application.tenant_id,
         action=ApprovalAction.SUBMIT_APPLICATION,
         resource_id=application.id,
+        meta_data=review_meta,
     )
 
     grant_a = await authority.approve(
@@ -553,6 +570,7 @@ async def test_two_independent_valid_grants_still_produce_one_actuator_call():
         tenant_id=application.tenant_id,
         action=ApprovalAction.SUBMIT_APPLICATION,
         resource_id=application.id,
+        meta_data=review_meta,
     )
 
     grant_b = await authority.approve(
@@ -626,3 +644,66 @@ async def test_two_independent_valid_grants_still_produce_one_actuator_call():
         stored.state
         is ApplicationState.SUBMITTED
     )
+
+
+@pytest.mark.asyncio
+async def test_unbound_submission_grant_is_rejected_before_actuator():
+    applications = InMemoryApplicationRepository()
+    approvals = InMemoryApprovalRepository()
+
+    application = JobApplication(
+        id="application_unbound_grant",
+        tenant_id="tenant_unbound_grant",
+        job_id="job_unbound_grant",
+        candidate_id="candidate_unbound_grant",
+        state=ApplicationState.APPROVED,
+    )
+
+    await applications.save(
+        application
+    )
+
+    authority = ApprovalService(
+        approvals
+    )
+
+    # Deliberately mint a legacy grant without WP3C review binding.
+    request = await authority.request(
+        tenant_id=application.tenant_id,
+        action=ApprovalAction.SUBMIT_APPLICATION,
+        resource_id=application.id,
+    )
+
+    grant = await authority.approve(
+        approval_id=request.id,
+        tenant_id=application.tenant_id,
+    )
+
+    actuator = FakeSubmissionActuator(
+        applications=applications,
+        approvals=approvals,
+    )
+
+    service = ApplicationSubmissionService(
+        applications=applications,
+        approvals=approvals,
+        actuator=actuator,
+    )
+
+    with pytest.raises(
+        SubmissionApprovalInvalid,
+        match="stale",
+    ):
+        await service.submit(
+            application_id=application.id,
+            tenant_id=application.tenant_id,
+            grant_id=grant.id,
+        )
+
+    persisted = await approvals.get_grant(
+        grant.id,
+        application.tenant_id,
+    )
+
+    assert persisted.is_consumed is False
+    assert actuator.calls == 0
