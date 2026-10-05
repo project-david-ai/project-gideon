@@ -429,3 +429,174 @@ async def test_nonapproved_parent_request_cannot_consume_grant():
     )
 
     assert persisted.is_consumed is False
+
+
+@pytest.mark.asyncio
+async def test_repository_grant_claim_is_single_use():
+    from project_gideon.models.approval import (
+        ApprovalAction,
+    )
+    from project_gideon.repositories.memory import (
+        InMemoryApprovalRepository,
+    )
+    from project_gideon.services.approval import (
+        ApprovalService,
+    )
+
+    repository = InMemoryApprovalRepository()
+    service = ApprovalService(repository)
+
+    request = await service.request(
+        tenant_id="tenant_atomic",
+        action=ApprovalAction.SUBMIT_APPLICATION,
+        resource_id="application_atomic",
+    )
+
+    grant = await service.approve(
+        approval_id=request.id,
+        tenant_id=request.tenant_id,
+    )
+
+    consumed = service.consume_grant(
+        grant
+    )
+
+    first = await repository.claim_grant(
+        consumed
+    )
+
+    second = await repository.claim_grant(
+        consumed
+    )
+
+    assert first is not None
+    assert first.is_consumed is True
+    assert second is None
+
+
+@pytest.mark.asyncio
+async def test_concurrent_service_consumers_cannot_both_claim_same_grant():
+    import asyncio
+
+    from project_gideon.models.approval import (
+        ApprovalAction,
+    )
+    from project_gideon.repositories.memory import (
+        InMemoryApprovalRepository,
+    )
+    from project_gideon.services.approval import (
+        ApprovalGrantInvalid,
+        ApprovalService,
+    )
+
+    class RacingApprovalRepository(
+        InMemoryApprovalRepository
+    ):
+        def __init__(self):
+            super().__init__()
+
+            self._consume_readers = 0
+            self._release_consumers = (
+                asyncio.Event()
+            )
+
+            self._race_grant_id = None
+
+        async def get_grant(
+            self,
+            grant_id,
+            tenant_id,
+        ):
+            grant = await super().get_grant(
+                grant_id,
+                tenant_id,
+            )
+
+            if (
+                self._race_grant_id == grant_id
+                and not grant.is_consumed
+            ):
+                self._consume_readers += 1
+
+                if self._consume_readers >= 2:
+                    self._release_consumers.set()
+
+                await self._release_consumers.wait()
+
+            return grant
+
+    repository = RacingApprovalRepository()
+    service = ApprovalService(repository)
+
+    request = await service.request(
+        tenant_id="tenant_race",
+        action=ApprovalAction.SUBMIT_APPLICATION,
+        resource_id="application_race",
+    )
+
+    grant = await service.approve(
+        approval_id=request.id,
+        tenant_id=request.tenant_id,
+    )
+
+    repository._race_grant_id = grant.id
+
+    results = await asyncio.gather(
+        service.consume(
+            grant_id=grant.id,
+            tenant_id=request.tenant_id,
+            action=ApprovalAction.SUBMIT_APPLICATION,
+            resource_id=request.resource_id,
+        ),
+        service.consume(
+            grant_id=grant.id,
+            tenant_id=request.tenant_id,
+            action=ApprovalAction.SUBMIT_APPLICATION,
+            resource_id=request.resource_id,
+        ),
+        return_exceptions=True,
+    )
+
+    successes = [
+        result
+        for result in results
+        if not isinstance(
+            result,
+            Exception,
+        )
+    ]
+
+    failures = [
+        result
+        for result in results
+        if isinstance(
+            result,
+            Exception,
+        )
+    ]
+
+    assert len(successes) == 1
+    assert successes[0].is_consumed is True
+
+    assert len(failures) == 1
+    assert isinstance(
+        failures[0],
+        ApprovalGrantInvalid,
+    )
+
+    # The losing concurrent caller may be rejected by either
+    # authoritative single-use barrier:
+    #
+    #   1. the persisted grant was already claimed, or
+    #   2. the parent ApprovalRequest was already moved from
+    #      APPROVED to CONSUMED by the winning caller.
+    #
+    # Both prove that only one caller acquired submission authority.
+    message = str(
+        failures[0]
+    ).lower()
+
+    assert (
+        "consumed" in message
+        or "not in approved state" in message
+    )

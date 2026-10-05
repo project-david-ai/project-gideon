@@ -218,6 +218,37 @@ class InMemoryApprovalRepository(
             )
 
         return store[key]
+    async def claim_grant(
+        self,
+        grant: ApprovalGrant,
+    ) -> ApprovalGrant | None:
+        store = getattr(
+            self,
+            "_approval_grants",
+            None,
+        )
+
+        key = (
+            grant.tenant_id,
+            grant.id,
+        )
+
+        if (
+            store is None
+            or key not in store
+        ):
+            raise KeyError(
+                f"Approval grant not found: {grant.id}"
+            )
+
+        current = store[key]
+
+        if current.is_consumed:
+            return None
+
+        store[key] = grant
+
+        return grant
     async def list_for_tenant(
         self,
         tenant_id: str,

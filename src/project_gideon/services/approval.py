@@ -181,10 +181,15 @@ class ApprovalService:
         )
 
         persisted_grant = (
-            await self._repository.save_grant(
+            await self._repository.claim_grant(
                 consumed_grant
             )
         )
+
+        if persisted_grant is None:
+            raise ApprovalGrantInvalid(
+                "Approval grant has already been consumed."
+            )
 
         await self._repository.save(
             consumed_request

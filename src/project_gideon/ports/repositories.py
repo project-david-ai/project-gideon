@@ -101,6 +101,17 @@ class ApprovalRepository(Protocol):
         tenant_id: str,
     ) -> ApprovalGrant:
         ...
+    async def claim_grant(
+        self,
+        grant: ApprovalGrant,
+    ) -> ApprovalGrant | None:
+        """
+        Atomically persist the supplied consumed representation
+        only when the currently stored grant is still unconsumed.
+
+        Return None when another caller has already claimed it.
+        """
+        ...
     async def list_for_tenant(
         self,
         tenant_id: str,
